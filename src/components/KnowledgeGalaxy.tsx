@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 
 interface Note {
   id: string;
@@ -18,13 +18,23 @@ interface KnowledgeGalaxyProps {
   notes: Note[];
   onNodeClick: (note: Note) => void;
   selectedNodeId?: string;
+  focusMode?: boolean;
+  searchResults?: Note[];
+  onScaleChange?: (scale: number) => void;
+  onOffsetChange?: (offset: { x: number; y: number }) => void;
+  theme?: string;
 }
 
-const KnowledgeGalaxy: React.FC<KnowledgeGalaxyProps> = ({ 
+const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({ 
   notes, 
   onNodeClick, 
-  selectedNodeId 
-}) => {
+  selectedNodeId,
+  focusMode = false,
+  searchResults,
+  onScaleChange,
+  onOffsetChange,
+  theme = 'cosmic'
+}, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
   const [nodes, setNodes] = useState<Note[]>([]);
@@ -43,6 +53,9 @@ const KnowledgeGalaxy: React.FC<KnowledgeGalaxyProps> = ({
     maxLife: number;
     size: number;
   }>>([]);
+
+  // Expose canvas ref to parent
+  useImperativeHandle(ref, () => canvasRef.current!);
 
   // Generate floating particles for background
   useEffect(() => {
@@ -364,6 +377,16 @@ const KnowledgeGalaxy: React.FC<KnowledgeGalaxyProps> = ({
     setVelocity({ x: 0, y: 0 });
   };
 
+  const handleScaleChange = (newScale: number) => {
+    setScale(newScale);
+    onScaleChange?.(newScale);
+  };
+
+  const handleOffsetChange = (newOffset: { x: number; y: number }) => {
+    setOffset(newOffset);
+    onOffsetChange?.(newOffset);
+  };
+
   const handleMouseMove = (e: React.MouseEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -380,10 +403,11 @@ const KnowledgeGalaxy: React.FC<KnowledgeGalaxyProps> = ({
       const deltaY = mouseY - lastMouse.y;
       
       setVelocity({ x: deltaX * 0.1, y: deltaY * 0.1 });
-      setOffset(prev => ({
-        x: prev.x + deltaX,
-        y: prev.y + deltaY
-      }));
+      const newOffset = {
+        x: offset.x + deltaX,
+        y: offset.y + deltaY
+      };
+      handleOffsetChange(newOffset);
       
       setLastMouse({ x: mouseX, y: mouseY });
     }
@@ -416,7 +440,7 @@ const KnowledgeGalaxy: React.FC<KnowledgeGalaxyProps> = ({
     e.preventDefault();
     const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
     const newScale = Math.max(0.1, Math.min(3, scale * zoomFactor));
-    setScale(newScale);
+    handleScaleChange(newScale);
   };
 
   const getNodeAtPosition = (mouseX: number, mouseY: number): Note | null => {
@@ -461,6 +485,8 @@ const KnowledgeGalaxy: React.FC<KnowledgeGalaxyProps> = ({
       style={{ display: 'block' }}
     />
   );
-};
+});
+
+KnowledgeGalaxy.displayName = 'KnowledgeGalaxy';
 
 export default KnowledgeGalaxy;

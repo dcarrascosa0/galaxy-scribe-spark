@@ -17,6 +17,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
+interface AdditionalAction {
+  component: React.ReactNode;
+  position: 'top' | 'bottom' | 'left' | 'right';
+}
+
 interface SpeedDialProps {
   onGenerateClick: () => void;
   onHistoryClick: () => void;
@@ -24,6 +29,7 @@ interface SpeedDialProps {
   onExportClick: () => void;
   onSettingsClick: () => void;
   onHelpClick: () => void;
+  additionalActions?: AdditionalAction[];
 }
 
 const SpeedDial: React.FC<SpeedDialProps> = ({
@@ -32,7 +38,8 @@ const SpeedDial: React.FC<SpeedDialProps> = ({
   onSearchClick,
   onExportClick,
   onSettingsClick,
-  onHelpClick
+  onHelpClick,
+  additionalActions = []
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -83,6 +90,20 @@ const SpeedDial: React.FC<SpeedDialProps> = ({
   return (
     <TooltipProvider>
       <div className="fixed bottom-6 right-6 z-50">
+        {/* Additional Actions */}
+        {additionalActions.map((additionalAction, index) => (
+          <div key={index} className={`
+            absolute transition-all duration-300
+            ${additionalAction.position === 'top' ? '-top-20' : ''}
+            ${additionalAction.position === 'bottom' ? '-bottom-20' : ''}
+            ${additionalAction.position === 'left' ? '-left-20' : ''}
+            ${additionalAction.position === 'right' ? '-right-20' : ''}
+            ${isOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}
+          `}>
+            {additionalAction.component}
+          </div>
+        ))}
+
         {/* Action buttons */}
         <div className={`
           flex flex-col gap-3 mb-4 transition-all duration-300 origin-bottom
