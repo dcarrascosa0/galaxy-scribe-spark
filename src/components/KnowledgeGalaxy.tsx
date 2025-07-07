@@ -12,6 +12,9 @@ interface Note {
   vy?: number;
   targetX?: number;
   targetY?: number;
+  importance?: number;
+  tags?: string[];
+  lastViewed?: Date;
 }
 
 interface KnowledgeGalaxyProps {
@@ -23,6 +26,8 @@ interface KnowledgeGalaxyProps {
   onScaleChange?: (scale: number) => void;
   onOffsetChange?: (offset: { x: number; y: number }) => void;
   theme?: string;
+  showTutorial?: boolean;
+  onNodeHover?: (note: Note | null) => void;
 }
 
 const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({ 
@@ -33,7 +38,9 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
   searchResults,
   onScaleChange,
   onOffsetChange,
-  theme = 'cosmic'
+  theme = 'cosmic',
+  showTutorial = false,
+  onNodeHover
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
@@ -44,6 +51,14 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
   const [lastMouse, setLastMouse] = useState({ x: 0, y: 0 });
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [velocity, setVelocity] = useState({ x: 0, y: 0 });
+  const [interactionEffects, setInteractionEffects] = useState<Array<{
+    x: number;
+    y: number;
+    life: number;
+    maxLife: number;
+    type: 'click' | 'hover' | 'pulse';
+    color: string;
+  }>>([]);
   const [particles, setParticles] = useState<Array<{
     x: number;
     y: number;
@@ -52,24 +67,83 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
     life: number;
     maxLife: number;
     size: number;
+    color: string;
+    type: 'star' | 'nebula' | 'comet';
   }>>([]);
 
   // Expose canvas ref to parent
   useImperativeHandle(ref, () => canvasRef.current!);
 
-  // Generate floating particles for background
+  // Generate enhanced particle system
   useEffect(() => {
-    const newParticles = Array.from({ length: 50 }, () => ({
+    const themeColors = getThemeColors(theme);
+    const newParticles = Array.from({ length: 80 }, () => ({
       x: Math.random() * window.innerWidth,
       y: Math.random() * window.innerHeight,
-      vx: (Math.random() - 0.5) * 0.5,
-      vy: (Math.random() - 0.5) * 0.5,
-      life: Math.random() * 200,
-      maxLife: 200,
-      size: Math.random() * 2 + 1
+      vx: (Math.random() - 0.5) * 0.8,
+      vy: (Math.random() - 0.5) * 0.8,
+      life: Math.random() * 300,
+      maxLife: 300,
+      size: Math.random() * 3 + 1,
+      color: themeColors.particles[Math.floor(Math.random() * themeColors.particles.length)],
+      type: ['star', 'nebula', 'comet'][Math.floor(Math.random() * 3)] as 'star' | 'nebula' | 'comet'
     }));
     setParticles(newParticles);
-  }, []);
+  }, [theme]);
+
+  const getThemeColors = (currentTheme: string) => {
+    const themes = {
+      cosmic: {
+        background: ['#0B1426', '#1A2332', '#2C3E50'],
+        nodes: [
+          { r: 52, g: 152, b: 219 },
+          { r: 142, g: 68, b: 173 },
+          { r: 231, g: 76, b: 60 },
+          { r: 241, g: 196, b: 15 },
+          { r: 46, g: 204, b: 113 }
+        ],
+        particles: ['#3498DB', '#8E44AD', '#F1C40F', '#E74C3C', '#2ECC71'],
+        connections: '#3498DB'
+      },
+      nebula: {
+        background: ['#2C1810', '#4A2C2A', '#6A1B9A'],
+        nodes: [
+          { r: 142, g: 68, b: 173 },
+          { r: 231, g: 76, b: 60 },
+          { r: 243, g: 156, b: 18 },
+          { r: 155, g: 89, b: 182 },
+          { r: 52, g: 152, b: 219 }
+        ],
+        particles: ['#8E44AD', '#E74C3C', '#F39C12', '#9B59B6', '#3498DB'],
+        connections: '#8E44AD'
+      },
+      solar: {
+        background: ['#1A1A0A', '#2D1810', '#D35400'],
+        nodes: [
+          { r: 230, g: 126, b: 34 },
+          { r: 211, g: 84, b: 0 },
+          { r: 241, g: 196, b: 15 },
+          { r: 231, g: 76, b: 60 },
+          { r: 46, g: 204, b: 113 }
+        ],
+        particles: ['#E67E22', '#D35400', '#F1C40F', '#E74C3C', '#2ECC71'],
+        connections: '#E67E22'
+      },
+      matrix: {
+        background: ['#000000', '#001100', '#002200'],
+        nodes: [
+          { r: 0, g: 255, b: 0 },
+          { r: 0, g: 204, b: 0 },
+          { r: 255, g: 255, b: 0 },
+          { r: 0, g: 150, b: 0 },
+          { r: 50, g: 255, b: 50 }
+        ],
+        particles: ['#00FF00', '#00CC00', '#FFFF00', '#009600', '#32FF32'],
+        connections: '#00FF00'
+      }
+    };
+    return themes[currentTheme as keyof typeof themes] || themes.cosmic;
+  };
 
   useEffect(() => {
     if (notes.length > 0) {
@@ -82,9 +156,11 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
     
     const traverse = (note: Note, depth: number, parentX = 0, parentY = 0, angle = 0) => {
       const radius = 120 + depth * 100;
+      const importance = note.importance || (5 - depth);
       const nodeWithPosition = {
         ...note,
         depth,
+        importance,
         x: parentX + Math.cos(angle) * radius,
         y: parentY + Math.sin(angle) * radius,
         targetX: parentX + Math.cos(angle) * radius,
@@ -109,122 +185,195 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
     setNodes(allNodes);
   };
 
-  const drawCurvedConnection = (ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, pulsePhase: number) => {
+  const createInteractionEffect = (x: number, y: number, type: 'click' | 'hover' | 'pulse', color: string) => {
+    const effect = {
+      x: x,
+      y: y,
+      life: type === 'click' ? 60 : type === 'hover' ? 30 : 40,
+      maxLife: type === 'click' ? 60 : type === 'hover' ? 30 : 40,
+      type,
+      color
+    };
+    
+    setInteractionEffects(prev => [...prev.slice(-10), effect]);
+  };
+
+  const drawEnhancedConnection = (
+    ctx: CanvasRenderingContext2D, 
+    x1: number, y1: number, 
+    x2: number, y2: number, 
+    pulsePhase: number,
+    isHighlighted: boolean = false
+  ) => {
     const midX = (x1 + x2) / 2;
     const midY = (y1 + y2) / 2;
     const distance = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
     const offset = Math.min(distance * 0.3, 80);
     
-    // Calculate perpendicular offset for curve
     const angle = Math.atan2(y2 - y1, x2 - x1);
     const perpAngle = angle + Math.PI / 2;
     const controlX = midX + Math.cos(perpAngle) * offset;
     const controlY = midY + Math.sin(perpAngle) * offset;
 
-    // Animate connection opacity and thickness based on pulse
+    const themeColors = getThemeColors(theme);
     const pulseIntensity = (Math.sin(pulsePhase) + 1) / 2;
-    const baseOpacity = 0.3;
-    const pulseOpacity = baseOpacity + pulseIntensity * 0.2;
+    const baseOpacity = isHighlighted ? 0.8 : 0.3;
+    const pulseOpacity = baseOpacity + pulseIntensity * 0.4;
     
-    ctx.strokeStyle = `rgba(52, 152, 219, ${pulseOpacity})`;
-    ctx.lineWidth = 1 + pulseIntensity * 0.5;
-    ctx.shadowColor = 'rgba(52, 152, 219, 0.4)';
-    ctx.shadowBlur = 3 + pulseIntensity * 2;
+    // Draw connection flow effect
+    const flowPhase = pulsePhase * 2;
+    const flowPosition = (Math.sin(flowPhase) + 1) / 2;
+    
+    // Main connection
+    ctx.strokeStyle = `rgba(${themeColors.connections === '#3498DB' ? '52, 152, 219' : themeColors.connections === '#8E44AD' ? '142, 68, 173' : themeColors.connections === '#E67E22' ? '230, 126, 34' : '0, 255, 0'}, ${pulseOpacity})`;
+    ctx.lineWidth = isHighlighted ? 2 + pulseIntensity : 1 + pulseIntensity * 0.5;
+    ctx.shadowColor = themeColors.connections;
+    ctx.shadowBlur = isHighlighted ? 8 : 3 + pulseIntensity * 2;
 
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.quadraticCurveTo(controlX, controlY, x2, y2);
     ctx.stroke();
     
-    // Reset shadow
+    // Flow indicator
+    if (isHighlighted) {
+      const t = flowPosition;
+      const flowX = (1 - t) * (1 - t) * x1 + 2 * (1 - t) * t * controlX + t * t * x2;
+      const flowY = (1 - t) * (1 - t) * y1 + 2 * (1 - t) * t * controlY + t * t * y2;
+      
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = themeColors.connections;
+      ctx.beginPath();
+      ctx.arc(flowX, flowY, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
     ctx.shadowBlur = 0;
   };
 
-  const drawNode = (ctx: CanvasRenderingContext2D, node: Note, time: number) => {
+  const drawEnhancedNode = (ctx: CanvasRenderingContext2D, node: Note, time: number) => {
     const isSelected = node.id === selectedNodeId;
     const isHovered = node.id === hoveredNode;
+    const isSearchResult = searchResults?.some(n => n.id === node.id);
+    const isDimmed = focusMode && selectedNodeId && !isSelected && !isSearchResult;
     
-    const colors = [
-      { r: 52, g: 152, b: 219 },   // Galaxy blue
-      { r: 142, g: 68, b: 173 },   // Nebula purple
-      { r: 231, g: 76, b: 60 },    // Star red
-      { r: 241, g: 196, b: 15 },   // Cosmic gold
-      { r: 46, g: 204, b: 113 }    // Space green
-    ];
-    
+    const themeColors = getThemeColors(theme);
+    const colors = themeColors.nodes;
     const color = colors[node.depth % colors.length];
-    const baseRadius = 8 + (5 - node.depth) * 2;
     
-    // Animated radius with breathing effect
+    const baseRadius = 8 + (node.importance || 5 - node.depth) * 2;
     const breathingPhase = time * 0.003 + node.depth * 0.5;
     const breathingEffect = Math.sin(breathingPhase) * 0.2 + 1;
     const radius = baseRadius * breathingEffect;
     
-    // Selection and hover effects
-    const interactionScale = isSelected ? 1.5 : isHovered ? 1.3 : 1;
+    const interactionScale = isSelected ? 1.8 : isHovered ? 1.4 : 1;
     const finalRadius = radius * interactionScale;
+    const opacity = isDimmed ? 0.3 : 1;
     
-    // Outer glow rings
+    // Enhanced glow rings for selection/hover
     if (isSelected || isHovered) {
-      const ringCount = isSelected ? 3 : 2;
+      const ringCount = isSelected ? 4 : 2;
       for (let i = 0; i < ringCount; i++) {
-        const ringRadius = finalRadius + (i + 1) * 8;
-        const ringOpacity = (0.3 - i * 0.1) * (isSelected ? 1 : 0.7);
-        const pulsePhase = time * 0.008 - i * 0.5;
+        const ringRadius = finalRadius + (i + 1) * 12;
+        const ringOpacity = (0.4 - i * 0.08) * opacity;
+        const pulsePhase = time * 0.008 - i * 0.3;
         const pulseBrightness = (Math.sin(pulsePhase) + 1) / 2;
         
         ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${ringOpacity * pulseBrightness})`;
-        ctx.lineWidth = 2 - i * 0.3;
+        ctx.lineWidth = 3 - i * 0.4;
         ctx.beginPath();
         ctx.arc(node.x!, node.y!, ringRadius, 0, Math.PI * 2);
         ctx.stroke();
       }
     }
     
-    // Main node with gradient and glow
+    // Search result highlight
+    if (isSearchResult && !isSelected) {
+      const pulsePhase = time * 0.01;
+      const pulseBrightness = (Math.sin(pulsePhase) + 1) / 2;
+      ctx.strokeStyle = `rgba(241, 196, 15, ${0.8 * pulseBrightness * opacity})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(node.x!, node.y!, finalRadius + 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    
+    // Enhanced node gradient with multiple layers
     const gradient = ctx.createRadialGradient(
       node.x! - finalRadius * 0.3, node.y! - finalRadius * 0.3, 0,
       node.x!, node.y!, finalRadius
     );
-    gradient.addColorStop(0, `rgba(${color.r + 50}, ${color.g + 50}, ${color.b + 50}, 1)`);
-    gradient.addColorStop(0.7, `rgba(${color.r}, ${color.g}, ${color.b}, 1)`);
-    gradient.addColorStop(1, `rgba(${color.r - 30}, ${color.g - 30}, ${color.b - 30}, 1)`);
+    gradient.addColorStop(0, `rgba(${Math.min(255, color.r + 80)}, ${Math.min(255, color.g + 80)}, ${Math.min(255, color.b + 80)}, ${opacity})`);
+    gradient.addColorStop(0.4, `rgba(${color.r + 30}, ${color.g + 30}, ${color.b + 30}, ${opacity})`);
+    gradient.addColorStop(0.8, `rgba(${color.r}, ${color.g}, ${color.b}, ${opacity})`);
+    gradient.addColorStop(1, `rgba(${Math.max(0, color.r - 40)}, ${Math.max(0, color.g - 40)}, ${Math.max(0, color.b - 40)}, ${opacity})`);
     
-    // Glow effect
-    ctx.shadowColor = `rgba(${color.r}, ${color.g}, ${color.b}, 0.8)`;
-    ctx.shadowBlur = isSelected ? 20 : isHovered ? 15 : 8;
+    // Enhanced glow effect
+    ctx.shadowColor = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.8 * opacity})`;
+    ctx.shadowBlur = isSelected ? 25 : isHovered ? 18 : 10;
     
     ctx.fillStyle = gradient;
     ctx.beginPath();
     ctx.arc(node.x!, node.y!, finalRadius, 0, Math.PI * 2);
     ctx.fill();
     
-    // Inner highlight
+    // Multiple highlight layers
     ctx.shadowBlur = 0;
     const highlightGradient = ctx.createRadialGradient(
-      node.x! - finalRadius * 0.5, node.y! - finalRadius * 0.5, 0,
-      node.x!, node.y!, finalRadius * 0.6
+      node.x! - finalRadius * 0.6, node.y! - finalRadius * 0.6, 0,
+      node.x!, node.y!, finalRadius * 0.8
     );
-    highlightGradient.addColorStop(0, `rgba(255, 255, 255, 0.4)`);
+    highlightGradient.addColorStop(0, `rgba(255, 255, 255, ${0.6 * opacity})`);
+    highlightGradient.addColorStop(0.5, `rgba(255, 255, 255, ${0.2 * opacity})`);
     highlightGradient.addColorStop(1, `rgba(255, 255, 255, 0)`);
     
     ctx.fillStyle = highlightGradient;
     ctx.beginPath();
-    ctx.arc(node.x!, node.y!, finalRadius * 0.6, 0, Math.PI * 2);
+    ctx.arc(node.x!, node.y!, finalRadius * 0.8, 0, Math.PI * 2);
     ctx.fill();
     
-    // Rotation effect for selected nodes
+    // Depth indicator (small inner circle)
+    if (node.depth > 0) {
+      const innerRadius = finalRadius * 0.3;
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.4 * opacity})`;
+      ctx.beginPath();
+      ctx.arc(node.x!, node.y!, innerRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    // Importance indicators (small dots around the node)
+    const importance = node.importance || (5 - node.depth);
+    if (importance > 3) {
+      const dotCount = Math.min(importance - 3, 8);
+      const dotRadius = 2;
+      const orbitRadius = finalRadius + 15;
+      
+      for (let i = 0; i < dotCount; i++) {
+        const dotAngle = (i / dotCount) * Math.PI * 2 + time * 0.002;
+        const dotX = node.x! + Math.cos(dotAngle) * orbitRadius;
+        const dotY = node.y! + Math.sin(dotAngle) * orbitRadius;
+        
+        ctx.fillStyle = `rgba(241, 196, 15, ${0.8 * opacity})`;
+        ctx.beginPath();
+        ctx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    
+    // Enhanced rotation effect for selected nodes
     if (isSelected) {
-      const rotationPhase = time * 0.005;
-      const spikesCount = 8;
-      ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.6)`;
-      ctx.lineWidth = 1;
+      const rotationPhase = time * 0.008;
+      const spikesCount = 12;
+      ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.7 * opacity})`;
+      ctx.lineWidth = 1.5;
       
       for (let i = 0; i < spikesCount; i++) {
         const angle = (i / spikesCount) * Math.PI * 2 + rotationPhase;
-        const innerRadius = finalRadius + 5;
-        const outerRadius = finalRadius + 12;
+        const innerRadius = finalRadius + 8;
+        const outerRadius = finalRadius + 18;
+        const spikeIntensity = Math.sin(time * 0.02 + i) * 0.3 + 0.7;
         
+        ctx.globalAlpha = spikeIntensity * opacity;
         ctx.beginPath();
         ctx.moveTo(
           node.x! + Math.cos(angle) * innerRadius,
@@ -236,76 +385,184 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
         );
         ctx.stroke();
       }
+      ctx.globalAlpha = 1;
     }
 
-    // Draw title on high zoom with enhanced styling
-    if (scale > 0.6) {
+    // Enhanced title rendering with better styling
+    if (scale > 0.5) {
       ctx.shadowBlur = 0;
-      const textColor = document.documentElement.classList.contains('dark') ? '#ffffff' : '#1a1a1a';
+      const isDark = document.documentElement.classList.contains('dark');
+      const textColor = isDark ? '#ffffff' : '#1a1a1a';
       
-      // Text background
-      ctx.fillStyle = `rgba(${document.documentElement.classList.contains('dark') ? '0, 0, 0' : '255, 255, 255'}, 0.8)`;
-      ctx.font = `${Math.min(14 * scale, 14)}px Inter, sans-serif`;
+      const fontSize = Math.min(16 * scale, 16);
+      ctx.font = `${fontSize}px "Inter", -apple-system, BlinkMacSystemFont, sans-serif`;
+      ctx.fontWeight = isSelected ? 'bold' : 'normal';
+      
       const textMetrics = ctx.measureText(node.title);
       const textWidth = textMetrics.width;
-      const textHeight = 16;
+      const textHeight = fontSize + 4;
       
-      ctx.fillRect(
-        node.x! - textWidth / 2 - 6,
-        node.y! + finalRadius + 8,
-        textWidth + 12,
-        textHeight + 4
+      // Enhanced text background with better styling
+      const bgGradient = ctx.createLinearGradient(
+        node.x! - textWidth / 2 - 8,
+        node.y! + finalRadius + 12,
+        node.x! + textWidth / 2 + 8,
+        node.y! + finalRadius + 12 + textHeight
       );
       
-      // Text
-      ctx.fillStyle = textColor;
+      if (isDark) {
+        bgGradient.addColorStop(0, `rgba(0, 0, 0, ${0.8 * opacity})`);
+        bgGradient.addColorStop(1, `rgba(30, 30, 30, ${0.9 * opacity})`);
+      } else {
+        bgGradient.addColorStop(0, `rgba(255, 255, 255, ${0.9 * opacity})`);
+        bgGradient.addColorStop(1, `rgba(240, 240, 240, ${0.95 * opacity})`);
+      }
+      
+      ctx.fillStyle = bgGradient;
+      ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.3 * opacity})`;
+      ctx.lineWidth = 1;
+      
+      const rectX = node.x! - textWidth / 2 - 8;
+      const rectY = node.y! + finalRadius + 12;
+      const rectWidth = textWidth + 16;
+      const rectHeight = textHeight;
+      
+      ctx.beginPath();
+      ctx.roundRect(rectX, rectY, rectWidth, rectHeight, 6);
+      ctx.fill();
+      ctx.stroke();
+      
+      // Text with enhanced styling
+      ctx.fillStyle = `rgba(${textColor === '#ffffff' ? '255, 255, 255' : '26, 26, 26'}, ${opacity})`;
       ctx.textAlign = 'center';
-      ctx.fillText(node.title, node.x!, node.y! + finalRadius + 20);
+      ctx.textBaseline = 'middle';
+      
+      if (isSelected || isHovered) {
+        ctx.shadowColor = `rgba(${color.r}, ${color.g}, ${color.b}, 0.5)`;
+        ctx.shadowBlur = 2;
+      }
+      
+      ctx.fillText(node.title, node.x!, node.y! + finalRadius + 12 + textHeight / 2);
+      ctx.shadowBlur = 0;
     }
   };
 
-  const drawBackground = (ctx: CanvasRenderingContext2D, time: number) => {
+  const drawEnhancedBackground = (ctx: CanvasRenderingContext2D, time: number) => {
     const canvas = ctx.canvas;
+    const themeColors = getThemeColors(theme);
     
-    // Cosmic background gradient
+    // Multi-layer background gradient
     const gradient = ctx.createRadialGradient(
       canvas.width / 2, canvas.height / 2, 0,
-      canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height)
+      canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) * 0.8
     );
     
-    if (document.documentElement.classList.contains('dark')) {
-      gradient.addColorStop(0, '#0B1426');
-      gradient.addColorStop(0.5, '#1A2332');
-      gradient.addColorStop(1, '#2C3E50');
-    } else {
-      gradient.addColorStop(0, '#f8fafc');
-      gradient.addColorStop(0.5, '#e2e8f0');
-      gradient.addColorStop(1, '#cbd5e1');
-    }
+    themeColors.background.forEach((color, index) => {
+      gradient.addColorStop(index / (themeColors.background.length - 1), color);
+    });
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Floating particles
+    // Enhanced particle system
     particles.forEach(particle => {
       particle.x += particle.vx;
       particle.y += particle.vy;
       particle.life--;
       
-      if (particle.life <= 0 || particle.x < 0 || particle.x > canvas.width || 
-          particle.y < 0 || particle.y > canvas.height) {
+      if (particle.life <= 0 || particle.x < -50 || particle.x > canvas.width + 50 || 
+          particle.y < -50 || particle.y > canvas.height + 50) {
         particle.x = Math.random() * canvas.width;
         particle.y = Math.random() * canvas.height;
         particle.life = particle.maxLife;
       }
       
-      const alpha = (particle.life / particle.maxLife) * 0.6;
-      const twinkle = Math.sin(time * 0.01 + particle.x * 0.01) * 0.3 + 0.7;
+      const alpha = (particle.life / particle.maxLife) * 0.8;
+      const twinkle = Math.sin(time * 0.008 + particle.x * 0.01) * 0.4 + 0.6;
       
-      ctx.fillStyle = `rgba(255, 255, 255, ${alpha * twinkle})`;
-      ctx.beginPath();
-      ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.save();
+      
+      if (particle.type === 'star') {
+        ctx.fillStyle = `${particle.color}${Math.floor(alpha * twinkle * 255).toString(16).padStart(2, '0')}`;
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (particle.type === 'nebula') {
+        const nebulGradient = ctx.createRadialGradient(
+          particle.x, particle.y, 0,
+          particle.x, particle.y, particle.size * 3
+        );
+        nebulGradient.addColorStop(0, `${particle.color}${Math.floor(alpha * twinkle * 100).toString(16).padStart(2, '0')}`);
+        nebulGradient.addColorStop(1, `${particle.color}00`);
+        
+        ctx.fillStyle = nebulGradient;
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.size * 3, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (particle.type === 'comet') {
+        const tailLength = 15;
+        const tailGradient = ctx.createLinearGradient(
+          particle.x, particle.y,
+          particle.x - particle.vx * tailLength, particle.y - particle.vy * tailLength
+        );
+        tailGradient.addColorStop(0, `${particle.color}${Math.floor(alpha * twinkle * 255).toString(16).padStart(2, '0')}`);
+        tailGradient.addColorStop(1, `${particle.color}00`);
+        
+        ctx.strokeStyle = tailGradient;
+        ctx.lineWidth = particle.size;
+        ctx.beginPath();
+        ctx.moveTo(particle.x, particle.y);
+        ctx.lineTo(particle.x - particle.vx * tailLength, particle.y - particle.vy * tailLength);
+        ctx.stroke();
+        
+        ctx.fillStyle = `${particle.color}${Math.floor(alpha * twinkle * 255).toString(16).padStart(2, '0')}`;
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      ctx.restore();
+    });
+    
+    // Draw interaction effects
+    interactionEffects.forEach((effect, index) => {
+      const alpha = effect.life / effect.maxLife;
+      const scale = 1 + (1 - alpha) * 2;
+      
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      
+      if (effect.type === 'click') {
+        ctx.strokeStyle = effect.color;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(effect.x, effect.y, 20 * scale, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(effect.x, effect.y, 35 * scale, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (effect.type === 'hover') {
+        const gradient = ctx.createRadialGradient(
+          effect.x, effect.y, 0,
+          effect.x, effect.y, 15 * scale
+        );
+        gradient.addColorStop(0, effect.color);
+        gradient.addColorStop(1, `${effect.color}00`);
+        
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(effect.x, effect.y, 15 * scale, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      ctx.restore();
+      
+      effect.life--;
+      if (effect.life <= 0) {
+        setInteractionEffects(prev => prev.filter((_, i) => i !== index));
+      }
     });
   };
 
@@ -320,34 +577,36 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
     
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Draw background
-    drawBackground(ctx, time);
+    // Draw enhanced background
+    drawEnhancedBackground(ctx, time);
     
     // Set transform
     ctx.save();
     ctx.translate(canvas.width / 2 + offset.x, canvas.height / 2 + offset.y);
     ctx.scale(scale, scale);
 
-    // Draw connections with animation
+    // Draw enhanced connections
     nodes.forEach(node => {
       node.children.forEach(child => {
         const childNode = nodes.find(n => n.id === child.id);
         if (childNode) {
           const pulsePhase = time * 0.004 + node.depth;
-          drawCurvedConnection(ctx, node.x!, node.y!, childNode.x!, childNode.y!, pulsePhase);
+          const isHighlighted = (node.id === selectedNodeId || childNode.id === selectedNodeId) ||
+                               (node.id === hoveredNode || childNode.id === hoveredNode);
+          drawEnhancedConnection(ctx, node.x!, node.y!, childNode.x!, childNode.y!, pulsePhase, isHighlighted);
         }
       });
     });
 
-    // Draw nodes
+    // Draw enhanced nodes
     nodes.forEach(node => {
-      drawNode(ctx, node, time);
+      drawEnhancedNode(ctx, node, time);
     });
 
     ctx.restore();
     
     animationRef.current = requestAnimationFrame(animate);
-  }, [nodes, scale, offset, selectedNodeId, hoveredNode, particles]);
+  }, [nodes, scale, offset, selectedNodeId, hoveredNode, particles, interactionEffects, focusMode, searchResults, theme]);
 
   useEffect(() => {
     animationRef.current = requestAnimationFrame(animate);
@@ -368,6 +627,14 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
 
     const clickedNode = getNodeAtPosition(mouseX, mouseY);
     if (clickedNode) {
+      const themeColors = getThemeColors(theme);
+      const color = themeColors.nodes[clickedNode.depth % themeColors.nodes.length];
+      createInteractionEffect(
+        (mouseX - canvas.width / 2 - offset.x) / scale,
+        (mouseY - canvas.height / 2 - offset.y) / scale,
+        'click',
+        `rgb(${color.r}, ${color.g}, ${color.b})`
+      );
       onNodeClick(clickedNode);
       return;
     }
@@ -396,7 +663,23 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
     const mouseY = e.clientY - rect.top;
 
     const hoveredNode = getNodeAtPosition(mouseX, mouseY);
-    setHoveredNode(hoveredNode?.id || null);
+    const newHoveredId = hoveredNode?.id || null;
+    
+    if (newHoveredId !== hoveredNode?.id) {
+      setHoveredNode(newHoveredId);
+      onNodeHover?.(hoveredNode);
+      
+      if (hoveredNode) {
+        const themeColors = getThemeColors(theme);
+        const color = themeColors.nodes[hoveredNode.depth % themeColors.nodes.length];
+        createInteractionEffect(
+          (mouseX - canvas.width / 2 - offset.x) / scale,
+          (mouseY - canvas.height / 2 - offset.y) / scale,
+          'hover',
+          `rgb(${color.r}, ${color.g}, ${color.b})`
+        );
+      }
+    }
 
     if (isDragging) {
       const deltaX = mouseX - lastMouse.x;
@@ -454,7 +737,7 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
       const distance = Math.sqrt(
         Math.pow(canvasX - node.x!, 2) + Math.pow(canvasY - node.y!, 2)
       );
-      const radius = (8 + (5 - node.depth) * 2) * (node.id === hoveredNode ? 1.3 : 1);
+      const radius = (8 + (node.importance || 5 - node.depth) * 2) * (node.id === hoveredNode ? 1.4 : 1);
       return distance <= radius;
     }) || null;
   };
