@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import KnowledgeGalaxy from '@/components/KnowledgeGalaxy';
 import GalaxyPlaceholder from '@/components/GalaxyPlaceholder';
 import LoadingProgress from '@/components/LoadingProgress';
@@ -7,6 +7,12 @@ import SpeedDial from '@/components/SpeedDial';
 import GeneratePanel, { GenerateConfig } from '@/components/GeneratePanel';
 import HistoryPanel from '@/components/HistoryPanel';
 import NoteInspector from '@/components/NoteInspector';
+import GalaxySearch from '@/components/GalaxySearch';
+import FocusMode from '@/components/FocusMode';
+import GalaxyMiniMap from '@/components/GalaxyMiniMap';
+import KeyboardShortcuts from '@/components/KeyboardShortcuts';
+import ThemeSelector from '@/components/ThemeSelector';
+import ExportGalaxy from '@/components/ExportGalaxy';
 import { toast } from '@/hooks/use-toast';
 
 interface Note {
@@ -28,6 +34,12 @@ interface HistoryItem {
 
 const Index = () => {
   const [currentNotes, setCurrentNotes] = useState<Note[]>([]);
+  const [searchResults, setSearchResults] = useState<Note[]>([]);
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState('cosmic');
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
+  
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationPhase, setGenerationPhase] = useState('');
   const [generationProgress, setGenerationProgress] = useState(0);
@@ -39,6 +51,11 @@ const Index = () => {
   
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+
+  // Galaxy control states
+  const [galaxyScale, setGalaxyScale] = useState(1);
+  const [galaxyOffset, setGalaxyOffset] = useState({ x: 0, y: 0 });
+  const galaxyRef = useRef<any>(null);
 
   // Mock data for demonstration
   const mockNotes: Note[] = [
@@ -73,6 +90,56 @@ const Index = () => {
       ]
     }
   ];
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      switch (e.key) {
+        case '?':
+          e.preventDefault();
+          setShowKeyboardShortcuts(true);
+          break;
+        case ' ':
+          e.preventDefault();
+          // Toggle speed dial - implement in SpeedDial component
+          break;
+        case 'Escape':
+          e.preventDefault();
+          setShowGeneratePanel(false);
+          setShowHistoryPanel(false);
+          setShowNoteInspector(false);
+          setShowKeyboardShortcuts(false);
+          break;
+        case 'g':
+        case 'G':
+          e.preventDefault();
+          setShowGeneratePanel(true);
+          break;
+        case 'h':
+        case 'H':
+          e.preventDefault();
+          setShowHistoryPanel(true);
+          break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          setIsFocusMode(!isFocusMode);
+          break;
+        case 'r':
+        case 'R':
+          e.preventDefault();
+          handleResetGalaxy();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFocusMode]);
 
   const simulateGeneration = async (config: GenerateConfig) => {
     setIsGenerating(true);
@@ -110,7 +177,6 @@ const Index = () => {
       });
     }
 
-    // Simulate generated notes
     const newHistoryItem: HistoryItem = {
       id: Date.now().toString(),
       topic: config.topic,
@@ -155,8 +221,40 @@ const Index = () => {
     });
   };
 
+  const handleSearchResults = (results: Note[]) => {
+    setSearchResults(results);
+    setIsSearchActive(true);
+  };
+
+  const handleClearSearch = () => {
+    setSearchResults([]);
+    setIsSearchActive(false);
+  };
+
+  const handleNavigateToNode = (x: number, y: number) => {
+    setGalaxyOffset({ x, y });
+  };
+
+  const handleResetGalaxy = () => {
+    setGalaxyScale(1);
+    setGalaxyOffset({ x: 0, y: 0 });
+    toast({
+      title: "Galaxy Reset",
+      description: "Returned to default view",
+    });
+  };
+
+  const handleThemeChange = (themeId: string) => {
+    setCurrentTheme(themeId);
+    // Apply theme to document root
+    document.documentElement.setAttribute('data-theme', themeId);
+    toast({
+      title: "Theme Changed",
+      description: `Switched to ${themeId} theme`,
+    });
+  };
+
   const getBreadcrumbs = (note: Note): Note[] => {
-    // Simple breadcrumb generation - in a real app, you'd track the full path
     return [note];
   };
 
@@ -175,11 +273,19 @@ const Index = () => {
       return <GalaxyPlaceholder />;
     }
 
+    const displayNotes = isSearchActive ? searchResults : currentNotes;
+
     return (
       <KnowledgeGalaxy
-        notes={currentNotes}
+        ref={galaxyRef}
+        notes={displayNotes}
         onNodeClick={handleNodeClick}
         selectedNodeId={selectedNote?.id}
+        focusMode={isFocusMode}
+        searchResults={isSearchActive ? searchResults : undefined}
+        onScaleChange={setGalaxyScale}
+        onOffsetChange={setGalaxyOffset}
+        theme={currentTheme}
       />
     );
   };
@@ -191,14 +297,56 @@ const Index = () => {
         {renderMainContent()}
       </main>
 
+      {/* Search Bar */}
+      {currentNotes.length > 0 && (
+        <GalaxySearch
+          notes={currentNotes}
+          onSearchResults={handleSearchResults}
+          onClearSearch={handleClearSearch}
+        />
+      )}
+
+      {/* Focus Mode Toggle */}
+      {currentNotes.length > 0 && (
+        <FocusMode
+          isActive={isFocusMode}
+          onToggle={() => setIsFocusMode(!isFocusMode)}
+        />
+      )}
+
+      {/* Theme Selector */}
+      <div className="fixed top-4 right-20 z-40">
+        <ThemeSelector
+          currentTheme={currentTheme}
+          onThemeChange={handleThemeChange}
+        />
+      </div>
+
+      {/* Mini Map */}
+      {currentNotes.length > 0 && (
+        <GalaxyMiniMap
+          notes={currentNotes}
+          scale={galaxyScale}
+          offset={galaxyOffset}
+          onNavigate={handleNavigateToNode}
+          onReset={handleResetGalaxy}
+        />
+      )}
+
       {/* Speed Dial */}
       <SpeedDial
         onGenerateClick={() => setShowGeneratePanel(true)}
         onHistoryClick={() => setShowHistoryPanel(true)}
-        onSearchClick={() => toast({ title: "Search", description: "Focus search coming soon!" })}
-        onExportClick={() => toast({ title: "Export", description: "Export functionality coming soon!" })}
-        onSettingsClick={() => toast({ title: "Settings", description: "Settings panel coming soon!" })}
-        onHelpClick={() => toast({ title: "Help", description: "Help documentation coming soon!" })}
+        onSearchClick={() => toast({ title: "Search", description: "Use the search bar at the top!" })}
+        onExportClick={() => toast({ title: "Export", description: "Use the export button in the speed dial!" })}
+        onSettingsClick={() => toast({ title: "Settings", description: "Use the theme selector!" })}
+        onHelpClick={() => setShowKeyboardShortcuts(true)}
+        additionalActions={[
+          {
+            component: <ExportGalaxy notes={currentNotes} galaxyCanvasRef={galaxyRef} />,
+            position: 'top'
+          }
+        ]}
       />
 
       {/* Side Panels */}
@@ -221,6 +369,12 @@ const Index = () => {
         onClose={() => setShowNoteInspector(false)}
         note={selectedNote}
         breadcrumbs={selectedNote ? getBreadcrumbs(selectedNote) : []}
+      />
+
+      {/* Keyboard Shortcuts Dialog */}
+      <KeyboardShortcuts
+        isOpen={showKeyboardShortcuts}
+        onClose={() => setShowKeyboardShortcuts(false)}
       />
     </div>
   );
