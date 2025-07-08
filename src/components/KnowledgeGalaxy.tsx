@@ -1,775 +1,369 @@
-import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useRef, useCallback, forwardRef } from 'react';
 
 interface Note {
   id: string;
   title: string;
   content: string;
   children: Note[];
-  x?: number;
-  y?: number;
   depth: number;
-  vx?: number;
-  vy?: number;
-  targetX?: number;
-  targetY?: number;
   importance?: number;
   tags?: string[];
   lastViewed?: Date;
 }
 
+interface ProcessedNode extends Note {
+  x: number;
+  y: number;
+  radius: number;
+  color: string;
+}
+
 interface KnowledgeGalaxyProps {
   notes: Note[];
   onNodeClick: (note: Note) => void;
+  onNodeHover: (note: Note | null) => void;
   selectedNodeId?: string;
   focusMode?: boolean;
   searchResults?: Note[];
   onScaleChange?: (scale: number) => void;
   onOffsetChange?: (offset: { x: number; y: number }) => void;
-  theme?: string;
-  showTutorial?: boolean;
-  onNodeHover?: (note: Note | null) => void;
+  theme: string;
 }
 
-const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({ 
-  notes, 
-  onNodeClick, 
-  selectedNodeId,
-  focusMode = false,
-  searchResults,
-  onScaleChange,
-  onOffsetChange,
-  theme = 'cosmic',
-  showTutorial = false,
-  onNodeHover
-}, ref) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number>();
-  const [nodes, setNodes] = useState<Note[]>([]);
+const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
+  ({ notes, onNodeClick, onNodeHover, selectedNodeId, focusMode, searchResults, onScaleChange, onOffsetChange, theme }, ref) => {
+  const [processedNodes, setProcessedNodes] = useState<ProcessedNode[]>([]);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [lastMouse, setLastMouse] = useState({ x: 0, y: 0 });
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
-  const [velocity, setVelocity] = useState({ x: 0, y: 0 });
-  const [interactionEffects, setInteractionEffects] = useState<Array<{
-    x: number;
-    y: number;
-    life: number;
-    maxLife: number;
-    type: 'click' | 'hover' | 'pulse';
-    color: string;
-  }>>([]);
-  const [particles, setParticles] = useState<Array<{
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    life: number;
-    maxLife: number;
-    size: number;
-    color: string;
-    type: 'star' | 'nebula' | 'comet';
-  }>>([]);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [hoveredNode, setHoveredNode] = useState<ProcessedNode | null>(null);
+  const [particles, setParticles] = useState<any[]>([]);
+  
+  const canvasRef = ref || useRef<HTMLCanvasElement>(null);
+  const animationFrameRef = useRef<number>(0);
 
-  // Expose canvas ref to parent
-  useImperativeHandle(ref, () => canvasRef.current!);
+  const colors = [
+    '#69B34C', '#ACB334', '#FAB733', '#FF8E15', '#FF4E11',
+    '#54ACC1', '#A34CAC', '#5486C1', '#D4AC0D', '#1A5276'
+  ];
 
-  // Generate enhanced particle system
-  useEffect(() => {
-    const themeColors = getThemeColors(theme);
-    const newParticles = Array.from({ length: 80 }, () => ({
-      x: Math.random() * window.innerWidth,
-      y: Math.random() * window.innerHeight,
-      vx: (Math.random() - 0.5) * 0.8,
-      vy: (Math.random() - 0.5) * 0.8,
-      life: Math.random() * 300,
-      maxLife: 300,
-      size: Math.random() * 3 + 1,
-      color: themeColors.particles[Math.floor(Math.random() * themeColors.particles.length)],
-      type: ['star', 'nebula', 'comet'][Math.floor(Math.random() * 3)] as 'star' | 'nebula' | 'comet'
-    }));
-    setParticles(newParticles);
-  }, [theme]);
-
-  const getThemeColors = (currentTheme: string) => {
-    const themes = {
-      cosmic: {
-        background: ['#0B1426', '#1A2332', '#2C3E50'],
-        nodes: [
-          { r: 52, g: 152, b: 219 },
-          { r: 142, g: 68, b: 173 },
-          { r: 231, g: 76, b: 60 },
-          { r: 241, g: 196, b: 15 },
-          { r: 46, g: 204, b: 113 }
-        ],
-        particles: ['#3498DB', '#8E44AD', '#F1C40F', '#E74C3C', '#2ECC71'],
-        connections: '#3498DB'
-      },
-      nebula: {
-        background: ['#2C1810', '#4A2C2A', '#6A1B9A'],
-        nodes: [
-          { r: 142, g: 68, b: 173 },
-          { r: 231, g: 76, b: 60 },
-          { r: 243, g: 156, b: 18 },
-          { r: 155, g: 89, b: 182 },
-          { r: 52, g: 152, b: 219 }
-        ],
-        particles: ['#8E44AD', '#E74C3C', '#F39C12', '#9B59B6', '#3498DB'],
-        connections: '#8E44AD'
-      },
-      solar: {
-        background: ['#1A1A0A', '#2D1810', '#D35400'],
-        nodes: [
-          { r: 230, g: 126, b: 34 },
-          { r: 211, g: 84, b: 0 },
-          { r: 241, g: 196, b: 15 },
-          { r: 231, g: 76, b: 60 },
-          { r: 46, g: 204, b: 113 }
-        ],
-        particles: ['#E67E22', '#D35400', '#F1C40F', '#E74C3C', '#2ECC71'],
-        connections: '#E67E22'
-      },
-      matrix: {
-        background: ['#000000', '#001100', '#002200'],
-        nodes: [
-          { r: 0, g: 255, b: 0 },
-          { r: 0, g: 204, b: 0 },
-          { r: 255, g: 255, b: 0 },
-          { r: 0, g: 150, b: 0 },
-          { r: 50, g: 255, b: 50 }
-        ],
-        particles: ['#00FF00', '#00CC00', '#FFFF00', '#009600', '#32FF32'],
-        connections: '#00FF00'
-      }
-    };
-    return themes[currentTheme as keyof typeof themes] || themes.cosmic;
+  const getThemeBackground = (theme: string) => {
+    switch (theme) {
+      case 'dark': return '#121212';
+      case 'light': return '#f9f9f9';
+      case 'cosmic': return '#0D0423';
+      case ' Serene': return '#E8F6EF';
+      default: return '#FFFFFF';
+    }
   };
 
-  useEffect(() => {
-    if (notes.length > 0) {
-      generateNodePositions(notes);
-    }
-  }, [notes]);
+  const processNodes = useCallback(() => {
+    if (!notes) return [];
 
-  const generateNodePositions = (noteData: Note[]) => {
-    const allNodes: Note[] = [];
-    
-    const traverse = (note: Note, depth: number, parentX = 0, parentY = 0, angle = 0) => {
-      const radius = 120 + depth * 100;
-      const importance = note.importance || (5 - depth);
-      const nodeWithPosition = {
+    const width = dimensions.width;
+    const height = dimensions.height;
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const radius = Math.min(width, height) * 0.4;
+    const angleIncrement = (2 * Math.PI) / notes.length;
+
+    return notes.map((note, index) => {
+      const angle = index * angleIncrement;
+      const x = centerX + radius * Math.cos(angle);
+      const y = centerY + radius * Math.sin(angle);
+      const color = colors[index % colors.length];
+      const nodeRadius = 10 + (note.children.length * 2);
+
+      return {
         ...note,
-        depth,
-        importance,
-        x: parentX + Math.cos(angle) * radius,
-        y: parentY + Math.sin(angle) * radius,
-        targetX: parentX + Math.cos(angle) * radius,
-        targetY: parentY + Math.sin(angle) * radius,
-        vx: 0,
-        vy: 0
+        x,
+        y,
+        radius: nodeRadius,
+        color
       };
-      
-      allNodes.push(nodeWithPosition);
-      
-      note.children.forEach((child, index) => {
-        const childAngle = angle + (index - (note.children.length - 1) / 2) * (Math.PI / 4);
-        traverse(child, depth + 1, nodeWithPosition.x!, nodeWithPosition.y!, childAngle);
+    });
+  }, [colors, dimensions, notes]);
+
+  const initializeParticles = useCallback(() => {
+    const newParticles = [];
+    const numberOfParticles = Math.floor(dimensions.width * dimensions.height / 10000);
+
+    for (let i = 0; i < numberOfParticles; i++) {
+      newParticles.push({
+        x: Math.random() * dimensions.width,
+        y: Math.random() * dimensions.height,
+        opacity: Math.random(),
       });
-    };
-
-    noteData.forEach((note, index) => {
-      const startAngle = (index / noteData.length) * 2 * Math.PI;
-      traverse(note, 0, 0, 0, startAngle);
-    });
-
-    setNodes(allNodes);
-  };
-
-  const createInteractionEffect = (x: number, y: number, type: 'click' | 'hover' | 'pulse', color: string) => {
-    const effect = {
-      x: x,
-      y: y,
-      life: type === 'click' ? 60 : type === 'hover' ? 30 : 40,
-      maxLife: type === 'click' ? 60 : type === 'hover' ? 30 : 40,
-      type,
-      color
-    };
-    
-    setInteractionEffects(prev => [...prev.slice(-10), effect]);
-  };
-
-  const drawEnhancedConnection = (
-    ctx: CanvasRenderingContext2D, 
-    x1: number, y1: number, 
-    x2: number, y2: number, 
-    pulsePhase: number,
-    isHighlighted: boolean = false
-  ) => {
-    const midX = (x1 + x2) / 2;
-    const midY = (y1 + y2) / 2;
-    const distance = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-    const offset = Math.min(distance * 0.3, 80);
-    
-    const angle = Math.atan2(y2 - y1, x2 - x1);
-    const perpAngle = angle + Math.PI / 2;
-    const controlX = midX + Math.cos(perpAngle) * offset;
-    const controlY = midY + Math.sin(perpAngle) * offset;
-
-    const themeColors = getThemeColors(theme);
-    const pulseIntensity = (Math.sin(pulsePhase) + 1) / 2;
-    const baseOpacity = isHighlighted ? 0.8 : 0.3;
-    const pulseOpacity = baseOpacity + pulseIntensity * 0.4;
-    
-    // Draw connection flow effect
-    const flowPhase = pulsePhase * 2;
-    const flowPosition = (Math.sin(flowPhase) + 1) / 2;
-    
-    // Main connection
-    ctx.strokeStyle = `rgba(${themeColors.connections === '#3498DB' ? '52, 152, 219' : themeColors.connections === '#8E44AD' ? '142, 68, 173' : themeColors.connections === '#E67E22' ? '230, 126, 34' : '0, 255, 0'}, ${pulseOpacity})`;
-    ctx.lineWidth = isHighlighted ? 2 + pulseIntensity : 1 + pulseIntensity * 0.5;
-    ctx.shadowColor = themeColors.connections;
-    ctx.shadowBlur = isHighlighted ? 8 : 3 + pulseIntensity * 2;
-
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.quadraticCurveTo(controlX, controlY, x2, y2);
-    ctx.stroke();
-    
-    // Flow indicator
-    if (isHighlighted) {
-      const t = flowPosition;
-      const flowX = (1 - t) * (1 - t) * x1 + 2 * (1 - t) * t * controlX + t * t * x2;
-      const flowY = (1 - t) * (1 - t) * y1 + 2 * (1 - t) * t * controlY + t * t * y2;
-      
-      ctx.shadowBlur = 10;
-      ctx.fillStyle = themeColors.connections;
-      ctx.beginPath();
-      ctx.arc(flowX, flowY, 3, 0, Math.PI * 2);
-      ctx.fill();
     }
-    
-    ctx.shadowBlur = 0;
-  };
-
-  const drawEnhancedNode = (ctx: CanvasRenderingContext2D, node: Note, time: number) => {
-    const isSelected = node.id === selectedNodeId;
-    const isHovered = node.id === hoveredNode;
-    const isSearchResult = searchResults?.some(n => n.id === node.id);
-    const isDimmed = focusMode && selectedNodeId && !isSelected && !isSearchResult;
-    
-    const themeColors = getThemeColors(theme);
-    const colors = themeColors.nodes;
-    const color = colors[node.depth % colors.length];
-    
-    const baseRadius = 8 + (node.importance || 5 - node.depth) * 2;
-    const breathingPhase = time * 0.003 + node.depth * 0.5;
-    const breathingEffect = Math.sin(breathingPhase) * 0.2 + 1;
-    const radius = baseRadius * breathingEffect;
-    
-    const interactionScale = isSelected ? 1.8 : isHovered ? 1.4 : 1;
-    const finalRadius = radius * interactionScale;
-    const opacity = isDimmed ? 0.3 : 1;
-    
-    // Enhanced glow rings for selection/hover
-    if (isSelected || isHovered) {
-      const ringCount = isSelected ? 4 : 2;
-      for (let i = 0; i < ringCount; i++) {
-        const ringRadius = finalRadius + (i + 1) * 12;
-        const ringOpacity = (0.4 - i * 0.08) * opacity;
-        const pulsePhase = time * 0.008 - i * 0.3;
-        const pulseBrightness = (Math.sin(pulsePhase) + 1) / 2;
-        
-        ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${ringOpacity * pulseBrightness})`;
-        ctx.lineWidth = 3 - i * 0.4;
-        ctx.beginPath();
-        ctx.arc(node.x!, node.y!, ringRadius, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
-    
-    // Search result highlight
-    if (isSearchResult && !isSelected) {
-      const pulsePhase = time * 0.01;
-      const pulseBrightness = (Math.sin(pulsePhase) + 1) / 2;
-      ctx.strokeStyle = `rgba(241, 196, 15, ${0.8 * pulseBrightness * opacity})`;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(node.x!, node.y!, finalRadius + 8, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    
-    // Enhanced node gradient with multiple layers
-    const gradient = ctx.createRadialGradient(
-      node.x! - finalRadius * 0.3, node.y! - finalRadius * 0.3, 0,
-      node.x!, node.y!, finalRadius
-    );
-    gradient.addColorStop(0, `rgba(${Math.min(255, color.r + 80)}, ${Math.min(255, color.g + 80)}, ${Math.min(255, color.b + 80)}, ${opacity})`);
-    gradient.addColorStop(0.4, `rgba(${color.r + 30}, ${color.g + 30}, ${color.b + 30}, ${opacity})`);
-    gradient.addColorStop(0.8, `rgba(${color.r}, ${color.g}, ${color.b}, ${opacity})`);
-    gradient.addColorStop(1, `rgba(${Math.max(0, color.r - 40)}, ${Math.max(0, color.g - 40)}, ${Math.max(0, color.b - 40)}, ${opacity})`);
-    
-    // Enhanced glow effect
-    ctx.shadowColor = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.8 * opacity})`;
-    ctx.shadowBlur = isSelected ? 25 : isHovered ? 18 : 10;
-    
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(node.x!, node.y!, finalRadius, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Multiple highlight layers
-    ctx.shadowBlur = 0;
-    const highlightGradient = ctx.createRadialGradient(
-      node.x! - finalRadius * 0.6, node.y! - finalRadius * 0.6, 0,
-      node.x!, node.y!, finalRadius * 0.8
-    );
-    highlightGradient.addColorStop(0, `rgba(255, 255, 255, ${0.6 * opacity})`);
-    highlightGradient.addColorStop(0.5, `rgba(255, 255, 255, ${0.2 * opacity})`);
-    highlightGradient.addColorStop(1, `rgba(255, 255, 255, 0)`);
-    
-    ctx.fillStyle = highlightGradient;
-    ctx.beginPath();
-    ctx.arc(node.x!, node.y!, finalRadius * 0.8, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Depth indicator (small inner circle)
-    if (node.depth > 0) {
-      const innerRadius = finalRadius * 0.3;
-      ctx.fillStyle = `rgba(255, 255, 255, ${0.4 * opacity})`;
-      ctx.beginPath();
-      ctx.arc(node.x!, node.y!, innerRadius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    
-    // Importance indicators (small dots around the node)
-    const importance = node.importance || (5 - node.depth);
-    if (importance > 3) {
-      const dotCount = Math.min(importance - 3, 8);
-      const dotRadius = 2;
-      const orbitRadius = finalRadius + 15;
-      
-      for (let i = 0; i < dotCount; i++) {
-        const dotAngle = (i / dotCount) * Math.PI * 2 + time * 0.002;
-        const dotX = node.x! + Math.cos(dotAngle) * orbitRadius;
-        const dotY = node.y! + Math.sin(dotAngle) * orbitRadius;
-        
-        ctx.fillStyle = `rgba(241, 196, 15, ${0.8 * opacity})`;
-        ctx.beginPath();
-        ctx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    
-    // Enhanced rotation effect for selected nodes
-    if (isSelected) {
-      const rotationPhase = time * 0.008;
-      const spikesCount = 12;
-      ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.7 * opacity})`;
-      ctx.lineWidth = 1.5;
-      
-      for (let i = 0; i < spikesCount; i++) {
-        const angle = (i / spikesCount) * Math.PI * 2 + rotationPhase;
-        const innerRadius = finalRadius + 8;
-        const outerRadius = finalRadius + 18;
-        const spikeIntensity = Math.sin(time * 0.02 + i) * 0.3 + 0.7;
-        
-        ctx.globalAlpha = spikeIntensity * opacity;
-        ctx.beginPath();
-        ctx.moveTo(
-          node.x! + Math.cos(angle) * innerRadius,
-          node.y! + Math.sin(angle) * innerRadius
-        );
-        ctx.lineTo(
-          node.x! + Math.cos(angle) * outerRadius,
-          node.y! + Math.sin(angle) * outerRadius
-        );
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    // Enhanced title rendering with better styling
-    if (scale > 0.5) {
-      ctx.shadowBlur = 0;
-      const isDark = document.documentElement.classList.contains('dark');
-      const textColor = isDark ? '#ffffff' : '#1a1a1a';
-      
-      const fontSize = Math.min(16 * scale, 16);
-      ctx.font = `${fontSize}px "Inter", -apple-system, BlinkMacSystemFont, sans-serif`;
-      ctx.fontWeight = isSelected ? 'bold' : 'normal';
-      
-      const textMetrics = ctx.measureText(node.title);
-      const textWidth = textMetrics.width;
-      const textHeight = fontSize + 4;
-      
-      // Enhanced text background with better styling
-      const bgGradient = ctx.createLinearGradient(
-        node.x! - textWidth / 2 - 8,
-        node.y! + finalRadius + 12,
-        node.x! + textWidth / 2 + 8,
-        node.y! + finalRadius + 12 + textHeight
-      );
-      
-      if (isDark) {
-        bgGradient.addColorStop(0, `rgba(0, 0, 0, ${0.8 * opacity})`);
-        bgGradient.addColorStop(1, `rgba(30, 30, 30, ${0.9 * opacity})`);
-      } else {
-        bgGradient.addColorStop(0, `rgba(255, 255, 255, ${0.9 * opacity})`);
-        bgGradient.addColorStop(1, `rgba(240, 240, 240, ${0.95 * opacity})`);
-      }
-      
-      ctx.fillStyle = bgGradient;
-      ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${0.3 * opacity})`;
-      ctx.lineWidth = 1;
-      
-      const rectX = node.x! - textWidth / 2 - 8;
-      const rectY = node.y! + finalRadius + 12;
-      const rectWidth = textWidth + 16;
-      const rectHeight = textHeight;
-      
-      ctx.beginPath();
-      ctx.roundRect(rectX, rectY, rectWidth, rectHeight, 6);
-      ctx.fill();
-      ctx.stroke();
-      
-      // Text with enhanced styling
-      ctx.fillStyle = `rgba(${textColor === '#ffffff' ? '255, 255, 255' : '26, 26, 26'}, ${opacity})`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      
-      if (isSelected || isHovered) {
-        ctx.shadowColor = `rgba(${color.r}, ${color.g}, ${color.b}, 0.5)`;
-        ctx.shadowBlur = 2;
-      }
-      
-      ctx.fillText(node.title, node.x!, node.y! + finalRadius + 12 + textHeight / 2);
-      ctx.shadowBlur = 0;
-    }
-  };
-
-  const drawEnhancedBackground = (ctx: CanvasRenderingContext2D, time: number) => {
-    const canvas = ctx.canvas;
-    const themeColors = getThemeColors(theme);
-    
-    // Multi-layer background gradient
-    const gradient = ctx.createRadialGradient(
-      canvas.width / 2, canvas.height / 2, 0,
-      canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) * 0.8
-    );
-    
-    themeColors.background.forEach((color, index) => {
-      gradient.addColorStop(index / (themeColors.background.length - 1), color);
-    });
-    
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Enhanced particle system
-    particles.forEach(particle => {
-      particle.x += particle.vx;
-      particle.y += particle.vy;
-      particle.life--;
-      
-      if (particle.life <= 0 || particle.x < -50 || particle.x > canvas.width + 50 || 
-          particle.y < -50 || particle.y > canvas.height + 50) {
-        particle.x = Math.random() * canvas.width;
-        particle.y = Math.random() * canvas.height;
-        particle.life = particle.maxLife;
-      }
-      
-      const alpha = (particle.life / particle.maxLife) * 0.8;
-      const twinkle = Math.sin(time * 0.008 + particle.x * 0.01) * 0.4 + 0.6;
-      
-      ctx.save();
-      
-      if (particle.type === 'star') {
-        ctx.fillStyle = `${particle.color}${Math.floor(alpha * twinkle * 255).toString(16).padStart(2, '0')}`;
-        ctx.beginPath();
-        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (particle.type === 'nebula') {
-        const nebulGradient = ctx.createRadialGradient(
-          particle.x, particle.y, 0,
-          particle.x, particle.y, particle.size * 3
-        );
-        nebulGradient.addColorStop(0, `${particle.color}${Math.floor(alpha * twinkle * 100).toString(16).padStart(2, '0')}`);
-        nebulGradient.addColorStop(1, `${particle.color}00`);
-        
-        ctx.fillStyle = nebulGradient;
-        ctx.beginPath();
-        ctx.arc(particle.x, particle.y, particle.size * 3, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (particle.type === 'comet') {
-        const tailLength = 15;
-        const tailGradient = ctx.createLinearGradient(
-          particle.x, particle.y,
-          particle.x - particle.vx * tailLength, particle.y - particle.vy * tailLength
-        );
-        tailGradient.addColorStop(0, `${particle.color}${Math.floor(alpha * twinkle * 255).toString(16).padStart(2, '0')}`);
-        tailGradient.addColorStop(1, `${particle.color}00`);
-        
-        ctx.strokeStyle = tailGradient;
-        ctx.lineWidth = particle.size;
-        ctx.beginPath();
-        ctx.moveTo(particle.x, particle.y);
-        ctx.lineTo(particle.x - particle.vx * tailLength, particle.y - particle.vy * tailLength);
-        ctx.stroke();
-        
-        ctx.fillStyle = `${particle.color}${Math.floor(alpha * twinkle * 255).toString(16).padStart(2, '0')}`;
-        ctx.beginPath();
-        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      
-      ctx.restore();
-    });
-    
-    // Draw interaction effects
-    interactionEffects.forEach((effect, index) => {
-      const alpha = effect.life / effect.maxLife;
-      const scale = 1 + (1 - alpha) * 2;
-      
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      
-      if (effect.type === 'click') {
-        ctx.strokeStyle = effect.color;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(effect.x, effect.y, 20 * scale, 0, Math.PI * 2);
-        ctx.stroke();
-        
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(effect.x, effect.y, 35 * scale, 0, Math.PI * 2);
-        ctx.stroke();
-      } else if (effect.type === 'hover') {
-        const gradient = ctx.createRadialGradient(
-          effect.x, effect.y, 0,
-          effect.x, effect.y, 15 * scale
-        );
-        gradient.addColorStop(0, effect.color);
-        gradient.addColorStop(1, `${effect.color}00`);
-        
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(effect.x, effect.y, 15 * scale, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      
-      ctx.restore();
-      
-      effect.life--;
-      if (effect.life <= 0) {
-        setInteractionEffects(prev => prev.filter((_, i) => i !== index));
-      }
-    });
-  };
-
-  const animate = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || nodes.length === 0) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const time = Date.now();
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Draw enhanced background
-    drawEnhancedBackground(ctx, time);
-    
-    // Set transform
-    ctx.save();
-    ctx.translate(canvas.width / 2 + offset.x, canvas.height / 2 + offset.y);
-    ctx.scale(scale, scale);
-
-    // Draw enhanced connections
-    nodes.forEach(node => {
-      node.children.forEach(child => {
-        const childNode = nodes.find(n => n.id === child.id);
-        if (childNode) {
-          const pulsePhase = time * 0.004 + node.depth;
-          const isHighlighted = (node.id === selectedNodeId || childNode.id === selectedNodeId) ||
-                               (node.id === hoveredNode || childNode.id === hoveredNode);
-          drawEnhancedConnection(ctx, node.x!, node.y!, childNode.x!, childNode.y!, pulsePhase, isHighlighted);
-        }
-      });
-    });
-
-    // Draw enhanced nodes
-    nodes.forEach(node => {
-      drawEnhancedNode(ctx, node, time);
-    });
-
-    ctx.restore();
-    
-    animationRef.current = requestAnimationFrame(animate);
-  }, [nodes, scale, offset, selectedNodeId, hoveredNode, particles, interactionEffects, focusMode, searchResults, theme]);
+    setParticles(newParticles);
+  }, [dimensions]);
 
   useEffect(() => {
-    animationRef.current = requestAnimationFrame(animate);
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
-  }, [animate]);
+    if (!canvasRef.current) return;
 
-  const handleMouseDown = (e: React.MouseEvent) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const clickedNode = getNodeAtPosition(mouseX, mouseY);
-    if (clickedNode) {
-      const themeColors = getThemeColors(theme);
-      const color = themeColors.nodes[clickedNode.depth % themeColors.nodes.length];
-      createInteractionEffect(
-        (mouseX - canvas.width / 2 - offset.x) / scale,
-        (mouseY - canvas.height / 2 - offset.y) / scale,
-        'click',
-        `rgb(${color.r}, ${color.g}, ${color.b})`
-      );
-      onNodeClick(clickedNode);
-      return;
-    }
-
-    setIsDragging(true);
-    setLastMouse({ x: mouseX, y: mouseY });
-    setVelocity({ x: 0, y: 0 });
-  };
-
-  const handleScaleChange = (newScale: number) => {
-    setScale(newScale);
-    onScaleChange?.(newScale);
-  };
-
-  const handleOffsetChange = (newOffset: { x: number; y: number }) => {
-    setOffset(newOffset);
-    onOffsetChange?.(newOffset);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const hoveredNode = getNodeAtPosition(mouseX, mouseY);
-    const newHoveredId = hoveredNode?.id || null;
-    
-    if (newHoveredId !== hoveredNode?.id) {
-      setHoveredNode(newHoveredId);
-      onNodeHover?.(hoveredNode);
-      
-      if (hoveredNode) {
-        const themeColors = getThemeColors(theme);
-        const color = themeColors.nodes[hoveredNode.depth % themeColors.nodes.length];
-        createInteractionEffect(
-          (mouseX - canvas.width / 2 - offset.x) / scale,
-          (mouseY - canvas.height / 2 - offset.y) / scale,
-          'hover',
-          `rgb(${color.r}, ${color.g}, ${color.b})`
-        );
-      }
-    }
-
-    if (isDragging) {
-      const deltaX = mouseX - lastMouse.x;
-      const deltaY = mouseY - lastMouse.y;
-      
-      setVelocity({ x: deltaX * 0.1, y: deltaY * 0.1 });
-      const newOffset = {
-        x: offset.x + deltaX,
-        y: offset.y + deltaY
-      };
-      handleOffsetChange(newOffset);
-      
-      setLastMouse({ x: mouseX, y: mouseY });
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-    
-    // Apply inertia
-    const applyInertia = () => {
-      setVelocity(prev => {
-        const newVel = { x: prev.x * 0.95, y: prev.y * 0.95 };
-        if (Math.abs(newVel.x) > 0.1 || Math.abs(newVel.y) > 0.1) {
-          setOffset(prevOffset => ({
-            x: prevOffset.x + newVel.x,
-            y: prevOffset.y + newVel.y
-          }));
-          requestAnimationFrame(applyInertia);
-        }
-        return newVel;
-      });
-    };
-    
-    if (Math.abs(velocity.x) > 1 || Math.abs(velocity.y) > 1) {
-      requestAnimationFrame(applyInertia);
-    }
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = Math.max(0.1, Math.min(3, scale * zoomFactor));
-    handleScaleChange(newScale);
-  };
-
-  const getNodeAtPosition = (mouseX: number, mouseY: number): Note | null => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-
-    const canvasX = (mouseX - canvas.width / 2 - offset.x) / scale;
-    const canvasY = (mouseY - canvas.height / 2 - offset.y) / scale;
-
-    return nodes.find(node => {
-      const distance = Math.sqrt(
-        Math.pow(canvasX - node.x!, 2) + Math.pow(canvasY - node.y!, 2)
-      );
-      const radius = (8 + (node.importance || 5 - node.depth) * 2) * (node.id === hoveredNode ? 1.4 : 1);
-      return distance <= radius;
-    }) || null;
-  };
-
-  useEffect(() => {
     const handleResize = () => {
-      const canvas = canvasRef.current;
-      if (canvas) {
-        canvas.width = canvas.offsetWidth;
-        canvas.height = canvas.offsetHeight;
-      }
+      setDimensions({
+        width: canvas.offsetWidth,
+        height: canvas.offsetHeight
+      });
     };
 
     handleResize();
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      cancelAnimationFrame(animationFrameRef.current);
+    };
   }, []);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      className="w-full h-full cursor-grab active:cursor-grabbing"
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onWheel={handleWheel}
-      style={{ display: 'block' }}
-    />
-  );
-});
+  useEffect(() => {
+    setProcessedNodes(processNodes());
+    initializeParticles();
+  }, [notes, dimensions, processNodes, initializeParticles]);
 
-KnowledgeGalaxy.displayName = 'KnowledgeGalaxy';
+  useEffect(() => {
+    if (onScaleChange) onScaleChange(scale);
+    if (onOffsetChange) onOffsetChange(offset);
+  }, [scale, offset, onScaleChange, onOffsetChange]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, dimensions.width, dimensions.height);
+
+    const render = () => {
+      ctx.clearRect(0, 0, dimensions.width, dimensions.height);
+      ctx.save();
+      ctx.translate(offset.x, offset.y);
+      ctx.scale(scale, scale);
+
+      processedNodes.forEach(node => {
+        const alpha = focusMode && selectedNodeId !== node.id ? 0.3 : 1;
+        drawNode(ctx, node, alpha);
+      });
+
+      processedNodes.forEach(node => {
+        if (node.children) {
+          node.children.forEach(child => {
+            const childNode = processedNodes.find(n => n.id === child.id);
+            if (childNode) {
+              drawConnection(ctx, node, childNode);
+            }
+          });
+        }
+      });
+
+      ctx.restore();
+      animationFrameRef.current = requestAnimationFrame(render);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(render);
+
+    return () => cancelAnimationFrame(animationFrameRef.current);
+  }, [processedNodes, scale, offset, selectedNodeId, focusMode, dimensions]);
+
+  const drawConnection = (ctx: CanvasRenderingContext2D, node1: ProcessedNode, node2: ProcessedNode) => {
+    ctx.save();
+    ctx.strokeStyle = '#FFFFFF20';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(node1.x, node1.y);
+    ctx.lineTo(node2.x, node2.y);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left - offset.x) / scale;
+    const y = (event.clientY - rect.top - offset.y) / scale;
+
+    const clickedNode = processedNodes.find(node => {
+      const dx = x - node.x;
+      const dy = y - node.y;
+      return Math.sqrt(dx * dx + dy * dy) < node.radius;
+    });
+
+    if (clickedNode) {
+      onNodeClick(clickedNode);
+    }
+  };
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left - offset.x) / scale;
+    const y = (event.clientY - rect.top - offset.y) / scale;
+
+    const hoveredNode = processedNodes.find(node => {
+      const dx = x - node.x;
+      const dy = y - node.y;
+      return Math.sqrt(dx * dx + dy * dy) < node.radius;
+    });
+
+    setHoveredNode(hoveredNode);
+    onNodeHover(hoveredNode || null);
+  };
+
+  const handleMouseLeave = () => {
+    onNodeHover(null);
+  };
+
+  const handleWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
+    const zoomSpeed = 0.1;
+    const newScale = scale + event.deltaY * -zoomSpeed;
+    setScale(Math.max(0.1, newScale));
+  };
+
+  const handleZoomIn = () => {
+    setScale(prevScale => Math.min(3, prevScale + 0.1));
+  };
+
+  const handleZoomOut = () => {
+    setScale(prevScale => Math.max(0.1, prevScale - 0.1));
+  };
+
+    const drawNode = (ctx: CanvasRenderingContext2D, node: ProcessedNode, alpha: number = 1) => {
+      const { x, y, radius, color, importance } = node;
+      
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      
+      // Draw node glow
+      if (importance && importance > 2) {
+        const glowRadius = radius * 2;
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
+        gradient.addColorStop(0, `${color}40`);
+        gradient.addColorStop(1, `${color}00`);
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Draw main node with layers
+      const layers = Math.min(importance || 1, 3);
+      for (let i = layers; i > 0; i--) {
+        const layerRadius = radius * (0.6 + (i * 0.2));
+        const layerAlpha = 0.3 + (i * 0.2);
+        
+        ctx.globalAlpha = alpha * layerAlpha;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, y, layerRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Draw main node
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw border
+      ctx.strokeStyle = selectedNodeId === node.id ? '#FFD700' : '#FFFFFF';
+      ctx.lineWidth = selectedNodeId === node.id ? 3 : 1;
+      ctx.stroke();
+      
+      // Draw text
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = `${Math.max(10, radius / 3)}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      const maxWidth = radius * 1.5;
+      const words = node.title.split(' ');
+      const lines = [];
+      let currentLine = '';
+      
+      for (const word of words) {
+        const testLine = currentLine + (currentLine ? ' ' : '') + word;
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (currentLine) lines.push(currentLine);
+      
+      const lineHeight = Math.max(12, radius / 4);
+      const startY = y - ((lines.length - 1) * lineHeight) / 2;
+      
+      lines.forEach((line, index) => {
+        ctx.fillText(line, x, startY + index * lineHeight);
+      });
+      
+      ctx.restore();
+    };
+
+    return (
+      <div className="relative w-full h-full overflow-hidden">
+        <canvas
+          ref={canvasRef}
+          width={dimensions.width}
+          height={dimensions.height}
+          className="absolute inset-0 cursor-pointer"
+          onClick={handleCanvasClick}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+          onWheel={handleWheel}
+          style={{ 
+            background: getThemeBackground(theme),
+            imageRendering: 'pixelated'
+          }}
+        />
+        
+        {/* Particle overlay */}
+        <div className="absolute inset-0 pointer-events-none">
+          {particles.map((particle, index) => (
+            <div
+              key={index}
+              className="absolute w-1 h-1 bg-white rounded-full opacity-20 animate-pulse"
+              style={{
+                left: `${particle.x}px`,
+                top: `${particle.y}px`,
+                animationDelay: `${index * 0.1}s`,
+                animationDuration: `${2 + Math.random() * 2}s`
+              }}
+            />
+          ))}
+        </div>
+        
+        {/* Controls */}
+        <div className="absolute bottom-4 right-4 flex flex-col gap-2">
+          <button
+            onClick={handleZoomIn}
+            className="bg-white/20 backdrop-blur-sm text-white p-2 rounded-full hover:bg-white/30 transition-colors"
+          >
+            +
+          </button>
+          <button
+            onClick={handleZoomOut}
+            className="bg-white/20 backdrop-blur-sm text-white p-2 rounded-full hover:bg-white/30 transition-colors"
+          >
+            -
+          </button>
+        </div>
+      </div>
+    );
+  }
+);
 
 export default KnowledgeGalaxy;
