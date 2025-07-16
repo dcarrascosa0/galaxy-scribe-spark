@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { X, ArrowUp, ArrowRight } from 'lucide-react';
 
@@ -68,6 +69,62 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
         default: return '#FFFFFF';
       }
     };
+
+    // Process all notes into a flat array for rendering
+    const flattenNotes = useCallback((notes: Note[]): Note[] => {
+      const flattened: Note[] = [];
+      
+      const traverse = (noteList: Note[], parentId?: string) => {
+        noteList.forEach(note => {
+          flattened.push({ ...note, parentId });
+          if (note.children && note.children.length > 0) {
+            traverse(note.children, note.id);
+          }
+        });
+      };
+      
+      traverse(notes);
+      return flattened;
+    }, []);
+
+    const processNodes = useCallback(() => {
+      if (!notes || notes.length === 0) {
+        console.log('No notes to process');
+        return [];
+      }
+
+      const flatNotes = flattenNotes(notes);
+      console.log('Processing notes:', flatNotes.length);
+
+      const width = dimensions.width;
+      const height = dimensions.height;
+      
+      if (width === 0 || height === 0) {
+        console.log('Canvas dimensions not ready:', { width, height });
+        return [];
+      }
+
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const radius = Math.min(width, height) * 0.3;
+
+      return flatNotes.map((note, index) => {
+        const angle = (index / flatNotes.length) * 2 * Math.PI;
+        const nodeRadius = Math.max(radius * 0.3, radius * 0.6);
+        const x = centerX + nodeRadius * Math.cos(angle);
+        const y = centerY + nodeRadius * Math.sin(angle);
+        const color = colors[index % colors.length];
+        const size = 15 + (note.children?.length || 0) * 3;
+
+        return {
+          ...note,
+          x,
+          y,
+          radius: size,
+          color
+        };
+      });
+    }, [notes, dimensions, colors, flattenNotes]);
 
     // Animation function for smooth camera movement
     const animateCamera = useCallback(() => {
@@ -141,33 +198,6 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
       return nextSibling ? processedNodes.find(n => n.id === nextSibling.id) || null : null;
     }, [processedNodes]);
 
-    const processNodes = useCallback(() => {
-      if (!notes) return [];
-
-      const width = dimensions.width;
-      const height = dimensions.height;
-      const centerX = width / 2;
-      const centerY = height / 2;
-      const radius = Math.min(width, height) * 0.4;
-      const angleIncrement = (2 * Math.PI) / notes.length;
-
-      return notes.map((note, index) => {
-        const angle = index * angleIncrement;
-        const x = centerX + radius * Math.cos(angle);
-        const y = centerY + radius * Math.sin(angle);
-        const color = colors[index % colors.length];
-        const nodeRadius = 10 + (note.children.length * 2);
-
-        return {
-          ...note,
-          x,
-          y,
-          radius: nodeRadius,
-          color
-        };
-      });
-    }, [colors, dimensions, notes]);
-
     const initializeParticles = useCallback(() => {
       const newParticles = [];
       const numberOfParticles = Math.floor(dimensions.width * dimensions.height / 10000);
@@ -182,15 +212,21 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
       setParticles(newParticles);
     }, [dimensions]);
 
+    // Set up canvas dimensions
     useEffect(() => {
-      if (!internalCanvasRef.current) return;
-
       const canvas = internalCanvasRef.current;
+      if (!canvas) return;
+
       const handleResize = () => {
-        setDimensions({
-          width: canvas.offsetWidth,
-          height: canvas.offsetHeight
-        });
+        const rect = canvas.getBoundingClientRect();
+        const newWidth = rect.width;
+        const newHeight = rect.height;
+        
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+        
+        setDimensions({ width: newWidth, height: newHeight });
+        console.log('Canvas resized:', { width: newWidth, height: newHeight });
       };
 
       handleResize();
@@ -198,13 +234,20 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
 
       return () => {
         window.removeEventListener('resize', handleResize);
-        cancelAnimationFrame(animationFrameRef.current);
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+        }
       };
     }, []);
 
+    // Process nodes when notes or dimensions change
     useEffect(() => {
-      setProcessedNodes(processNodes());
-      initializeParticles();
+      if (dimensions.width > 0 && dimensions.height > 0) {
+        const processed = processNodes();
+        console.log('Processed nodes:', processed.length);
+        setProcessedNodes(processed);
+        initializeParticles();
+      }
     }, [notes, dimensions, processNodes, initializeParticles]);
 
     useEffect(() => {
@@ -214,32 +257,37 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
 
     useEffect(() => {
       if (isAnimating) {
-        animateCamera();
+        const animate = () => {
+          animateCamera();
+          if (isAnimating) {
+            animationFrameRef.current = requestAnimationFrame(animate);
+          }
+        };
+        animationFrameRef.current = requestAnimationFrame(animate);
       }
     }, [isAnimating, animateCamera]);
 
+    // Main render loop
     useEffect(() => {
       const canvas = internalCanvasRef.current;
-      if (!canvas) return;
+      if (!canvas || dimensions.width === 0 || dimensions.height === 0) return;
 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      ctx.clearRect(0, 0, dimensions.width, dimensions.height);
-
       const render = () => {
-        ctx.clearRect(0, 0, dimensions.width, dimensions.height);
+        // Clear canvas
+        ctx.fillStyle = getThemeBackground(theme);
+        ctx.fillRect(0, 0, dimensions.width, dimensions.height);
+
+        // Save context and apply transformations
         ctx.save();
         ctx.translate(offset.x, offset.y);
         ctx.scale(scale, scale);
 
+        // Draw connections first
         processedNodes.forEach(node => {
-          const alpha = focusMode && selectedNodeId !== node.id ? 0.3 : 1;
-          drawNode(ctx, node, alpha);
-        });
-
-        processedNodes.forEach(node => {
-          if (node.children) {
+          if (node.children && node.children.length > 0) {
             node.children.forEach(child => {
               const childNode = processedNodes.find(n => n.id === child.id);
               if (childNode) {
@@ -249,23 +297,98 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
           }
         });
 
+        // Draw nodes
+        processedNodes.forEach(node => {
+          const alpha = focusMode && selectedNodeId !== node.id ? 0.3 : 1;
+          drawNode(ctx, node, alpha);
+        });
+
         ctx.restore();
-        animationFrameRef.current = requestAnimationFrame(render);
+
+        if (!isAnimating) {
+          animationFrameRef.current = requestAnimationFrame(render);
+        }
       };
 
-      animationFrameRef.current = requestAnimationFrame(render);
+      render();
 
-      return () => cancelAnimationFrame(animationFrameRef.current);
-    }, [processedNodes, scale, offset, selectedNodeId, focusMode, dimensions]);
+      return () => {
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+        }
+      };
+    }, [processedNodes, scale, offset, selectedNodeId, focusMode, dimensions, theme, isAnimating]);
 
     const drawConnection = (ctx: CanvasRenderingContext2D, node1: ProcessedNode, node2: ProcessedNode) => {
       ctx.save();
-      ctx.strokeStyle = '#FFFFFF20';
+      ctx.strokeStyle = theme === 'dark' || theme === 'cosmic' ? '#FFFFFF20' : '#00000020';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(node1.x, node1.y);
       ctx.lineTo(node2.x, node2.y);
       ctx.stroke();
+      ctx.restore();
+    };
+
+    const drawNode = (ctx: CanvasRenderingContext2D, node: ProcessedNode, alpha: number = 1) => {
+      const { x, y, radius, color, importance } = node;
+      
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      
+      // Draw node glow
+      if (importance && importance > 2) {
+        const glowRadius = radius * 2;
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
+        gradient.addColorStop(0, `${color}40`);
+        gradient.addColorStop(1, `${color}00`);
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Draw main node
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw border
+      ctx.strokeStyle = selectedNodeId === node.id ? '#FFD700' : (theme === 'dark' || theme === 'cosmic' ? '#FFFFFF' : '#000000');
+      ctx.lineWidth = selectedNodeId === node.id ? 3 : 1;
+      ctx.stroke();
+      
+      // Draw text
+      ctx.fillStyle = theme === 'dark' || theme === 'cosmic' ? '#FFFFFF' : '#000000';
+      ctx.font = `${Math.max(10, radius / 3)}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      const maxWidth = radius * 1.5;
+      const words = node.title.split(' ');
+      const lines = [];
+      let currentLine = '';
+      
+      for (const word of words) {
+        const testLine = currentLine + (currentLine ? ' ' : '') + word;
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (currentLine) lines.push(currentLine);
+      
+      const lineHeight = Math.max(12, radius / 4);
+      const startY = y - ((lines.length - 1) * lineHeight) / 2;
+      
+      lines.forEach((line, index) => {
+        ctx.fillText(line, x, startY + index * lineHeight);
+      });
+      
       ctx.restore();
     };
 
@@ -329,96 +452,17 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
       setScale(prevScale => Math.max(0.1, prevScale - 0.1));
     };
 
-    const drawNode = (ctx: CanvasRenderingContext2D, node: ProcessedNode, alpha: number = 1) => {
-      const { x, y, radius, color, importance } = node;
-      
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      
-      // Draw node glow
-      if (importance && importance > 2) {
-        const glowRadius = radius * 2;
-        const gradient = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
-        gradient.addColorStop(0, `${color}40`);
-        gradient.addColorStop(1, `${color}00`);
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      
-      // Draw main node with layers
-      const layers = Math.min(importance || 1, 3);
-      for (let i = layers; i > 0; i--) {
-        const layerRadius = radius * (0.6 + (i * 0.2));
-        const layerAlpha = 0.3 + (i * 0.2);
-        
-        ctx.globalAlpha = alpha * layerAlpha;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(x, y, layerRadius, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      
-      // Draw main node
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fill();
-      
-      // Draw border
-      ctx.strokeStyle = selectedNodeId === node.id ? '#FFD700' : '#FFFFFF';
-      ctx.lineWidth = selectedNodeId === node.id ? 3 : 1;
-      ctx.stroke();
-      
-      // Draw text
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = `${Math.max(10, radius / 3)}px Arial`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      
-      const maxWidth = radius * 1.5;
-      const words = node.title.split(' ');
-      const lines = [];
-      let currentLine = '';
-      
-      for (const word of words) {
-        const testLine = currentLine + (currentLine ? ' ' : '') + word;
-        const metrics = ctx.measureText(testLine);
-        if (metrics.width > maxWidth && currentLine) {
-          lines.push(currentLine);
-          currentLine = word;
-        } else {
-          currentLine = testLine;
-        }
-      }
-      if (currentLine) lines.push(currentLine);
-      
-      const lineHeight = Math.max(12, radius / 4);
-      const startY = y - ((lines.length - 1) * lineHeight) / 2;
-      
-      lines.forEach((line, index) => {
-        ctx.fillText(line, x, startY + index * lineHeight);
-      });
-      
-      ctx.restore();
-    };
-
     return (
       <div className="relative w-full h-full overflow-hidden">
         <canvas
           ref={internalCanvasRef}
-          width={dimensions.width}
-          height={dimensions.height}
-          className="absolute inset-0 cursor-pointer"
+          className="absolute inset-0 cursor-pointer w-full h-full"
           onClick={handleCanvasClick}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
           onWheel={handleWheel}
           style={{ 
             background: getThemeBackground(theme),
-            imageRendering: 'pixelated'
           }}
         />
         
