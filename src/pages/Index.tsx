@@ -100,6 +100,193 @@ const Index = () => {
   const galaxyRef = useRef<any>(null);
   const sessionStartTime = useRef<Date>(new Date());
 
+  // Add scratch data on component mount
+  useEffect(() => {
+    // Create enhanced scratch data for testing with depth 3
+    const createScratchData = (): Note => {
+      const rootNote: Note = {
+        id: 'scratch-root',
+        title: 'Advanced Machine Learning Systems',
+        content: 'Advanced Machine Learning encompasses deep learning architectures, distributed training systems, and production-scale ML pipelines that power modern AI applications.',
+        depth: 0,
+        children: [],
+        importance: 5,
+        tags: ['AI', 'Deep Learning', 'Production ML', 'Systems']
+      };
+
+      // Depth 1 nodes
+      const neuralNetworks: Note = {
+        id: 'scratch-neural',
+        title: 'Neural Network Architectures',
+        content: 'Neural networks form the backbone of modern deep learning, with various architectures optimized for different types of data and tasks.',
+        depth: 1,
+        parent: rootNote,
+        children: [],
+        importance: 4,
+        tags: ['Neural Networks', 'Architecture', 'Deep Learning']
+      };
+
+      const distributedTraining: Note = {
+        id: 'scratch-distributed',
+        title: 'Distributed Training Systems',
+        content: 'Large-scale machine learning requires distributed training across multiple GPUs and machines to handle massive datasets and complex models.',
+        depth: 1,
+        parent: rootNote,
+        children: [],
+        importance: 4,
+        tags: ['Distributed Systems', 'GPU', 'Scalability']
+      };
+
+      const mlOps: Note = {
+        id: 'scratch-mlops',
+        title: 'MLOps and Production Pipelines',
+        content: 'MLOps practices ensure reliable deployment, monitoring, and maintenance of machine learning models in production environments.',
+        depth: 1,
+        parent: rootNote,
+        children: [],
+        importance: 4,
+        tags: ['MLOps', 'Production', 'DevOps', 'Monitoring']
+      };
+
+      // Depth 2 nodes under Neural Networks
+      const transformers: Note = {
+        id: 'scratch-transformers',
+        title: 'Transformer Architecture',
+        content: 'Transformers revolutionized NLP and beyond with their attention mechanism, enabling models like BERT, GPT, and Vision Transformers.',
+        depth: 2,
+        parent: neuralNetworks,
+        children: [],
+        importance: 3,
+        tags: ['Transformers', 'Attention', 'NLP', 'Vision']
+      };
+
+      const convNets: Note = {
+        id: 'scratch-convnets',
+        title: 'Convolutional Neural Networks',
+        content: 'CNNs excel at processing grid-like data such as images, using convolution operations to detect local features and patterns.',
+        depth: 2,
+        parent: neuralNetworks,
+        children: [],
+        importance: 3,
+        tags: ['CNN', 'Computer Vision', 'Feature Detection']
+      };
+
+      const rnnLstm: Note = {
+        id: 'scratch-rnn',
+        title: 'RNNs and LSTMs',
+        content: 'Recurrent Neural Networks and Long Short-Term Memory networks process sequential data by maintaining hidden states across time steps.',
+        depth: 2,
+        parent: neuralNetworks,
+        children: [],
+        importance: 3,
+        tags: ['RNN', 'LSTM', 'Sequential Data', 'Time Series']
+      };
+
+      // Depth 3 nodes under Transformers
+      const attention: Note = {
+        id: 'scratch-attention',
+        title: 'Multi-Head Attention Mechanism',
+        content: 'Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions.',
+        depth: 3,
+        parent: transformers,
+        children: [],
+        importance: 2,
+        tags: ['Attention', 'Multi-Head', 'Representation', 'Parallel Processing']
+      };
+
+      const positionalEncoding: Note = {
+        id: 'scratch-positional',
+        title: 'Positional Encoding',
+        content: 'Positional encodings provide the model with information about the position of tokens in a sequence, crucial for transformer performance.',
+        depth: 3,
+        parent: transformers,
+        children: [],
+        importance: 2,
+        tags: ['Position', 'Encoding', 'Sequence', 'Sine Cosine']
+      };
+
+      const layerNorm: Note = {
+        id: 'scratch-layernorm',
+        title: 'Layer Normalization',
+        content: 'Layer normalization stabilizes training in deep networks by normalizing inputs across features rather than batch dimensions.',
+        depth: 3,
+        parent: transformers,
+        children: [],
+        importance: 2,
+        tags: ['Normalization', 'Stability', 'Training', 'Deep Networks']
+      };
+
+      // Depth 3 nodes under CNNs
+      const convolution: Note = {
+        id: 'scratch-convolution',
+        title: 'Convolution Operations',
+        content: 'Convolution operations apply filters across input data to detect features like edges, textures, and patterns in images.',
+        depth: 3,
+        parent: convNets,
+        children: [],
+        importance: 2,
+        tags: ['Convolution', 'Filters', 'Feature Maps', 'Kernels']
+      };
+
+      const pooling: Note = {
+        id: 'scratch-pooling',
+        title: 'Pooling Layers',
+        content: 'Pooling layers reduce spatial dimensions while retaining important information, helping with translation invariance and computational efficiency.',
+        depth: 3,
+        parent: convNets,
+        children: [],
+        importance: 2,
+        tags: ['Pooling', 'Max Pooling', 'Average Pooling', 'Dimensionality Reduction']
+      };
+
+      const batchNorm: Note = {
+        id: 'scratch-batchnorm',
+        title: 'Batch Normalization',
+        content: 'Batch normalization normalizes layer inputs by adjusting and scaling activations, accelerating training and improving stability.',
+        depth: 3,
+        parent: convNets,
+        children: [],
+        importance: 2,
+        tags: ['Batch Norm', 'Training Acceleration', 'Stability', 'Normalization']
+      };
+
+      // Build the hierarchy
+      attention.parent = transformers;
+      positionalEncoding.parent = transformers;
+      layerNorm.parent = transformers;
+      transformers.children = [attention, positionalEncoding, layerNorm];
+
+      convolution.parent = convNets;
+      pooling.parent = convNets;
+      batchNorm.parent = convNets;
+      convNets.children = [convolution, pooling, batchNorm];
+
+      transformers.parent = neuralNetworks;
+      convNets.parent = neuralNetworks;
+      rnnLstm.parent = neuralNetworks;
+      neuralNetworks.children = [transformers, convNets, rnnLstm];
+
+      distributedTraining.parent = rootNote;
+      mlOps.parent = rootNote;
+      rootNote.children = [neuralNetworks, distributedTraining, mlOps];
+
+      return rootNote;
+    };
+
+    const scratchData = createScratchData();
+    const scratchHistoryItem: HistoryItem = {
+      id: 'scratch-data-' + Date.now(),
+      topic: 'Advanced ML Systems (Depth 3 Scratch Data)',
+      createdAt: new Date(),
+      noteCount: 12,
+      depth: 3,
+      notes: [scratchData]
+    };
+
+    setHistory(prev => [scratchHistoryItem, ...prev]);
+  }, []);
+
+
   const convertNoteNodeToNote = (node: NoteNode, depth = 0, parent: Note | null = null): Note => {
     const newNote: Note = {
       id: uuidv4(),
