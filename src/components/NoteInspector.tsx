@@ -1,5 +1,8 @@
-
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
@@ -49,7 +52,7 @@ const NoteInspector: React.FC<NoteInspectorProps> = ({
 
       {/* Panel */}
       <div className={`
-        fixed right-0 top-0 h-full w-96 glass-panel z-50 transition-transform duration-300
+        fixed right-0 top-0 h-full w-full md:w-[40rem] lg:w-[50rem] glass-panel z-50 transition-transform duration-300
         ${isOpen ? 'translate-x-0' : 'translate-x-full'}
       `}>
         <div className="p-6 h-full flex flex-col">
@@ -93,9 +96,10 @@ const NoteInspector: React.FC<NoteInspectorProps> = ({
               {/* Note Content */}
               <ScrollArea className="flex-1">
                 <div className="prose prose-sm dark:prose-invert max-w-none">
-                  <div className="whitespace-pre-wrap leading-relaxed">
-                    {note.content}
-                  </div>
+                  <ReactMarkdown 
+                    remarkPlugins={[remarkGfm, remarkMath]} 
+                    rehypePlugins={[rehypeKatex]} 
+                    children={note.content} />
                 </div>
               </ScrollArea>
 

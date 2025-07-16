@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Star, Trophy, Target, Zap, Brain, Users, Clock, Award } from 'lucide-react';
 import { Button } from '@/components/ui/button';

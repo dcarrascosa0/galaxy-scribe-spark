@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -14,14 +15,14 @@ import {
   Users, 
   Clock, 
   Award,
-  Globe,
   Sparkles,
   TrendingUp,
   Calendar,
   Eye,
   Share2,
   Download,
-  Edit3
+  Edit3,
+  ArrowLeft,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -31,8 +32,8 @@ interface Galaxy {
   description: string;
   nodeCount: number;
   depth: number;
-  createdAt: Date;
-  lastViewed: Date;
+  createdAt: string;
+  lastViewed: string;
   tags: string[];
   thumbnail: string;
   views: number;
@@ -53,64 +54,34 @@ interface UserStats {
   rank: string;
 }
 
-const UserProfile: React.FC = () => {
-  const [userStats, setUserStats] = useState<UserStats>({
-    level: 12,
-    currentXP: 2450,
-    xpToNextLevel: 3000,
-    totalXP: 15650,
-    galaxiesCreated: 28,
-    totalNodes: 186,
-    totalStudyTime: 1247,
-    achievements: 15,
-    streak: 7,
-    rank: 'Knowledge Explorer'
-  });
+interface UserProfileData {
+  userStats: UserStats;
+  galaxies: Galaxy[];
+}
 
-  const [galaxies, setGalaxies] = useState<Galaxy[]>([
-    {
-      id: '1',
-      title: 'Machine Learning Fundamentals',
-      description: 'A comprehensive exploration of ML concepts, algorithms, and applications',
-      nodeCount: 15,
-      depth: 4,
-      createdAt: new Date('2024-01-15'),
-      lastViewed: new Date('2024-01-20'),
-      tags: ['AI', 'Technology', 'Data Science'],
-      thumbnail: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=300&h=200&fit=crop',
-      views: 245,
-      xpEarned: 750,
-      category: 'technology'
-    },
-    {
-      id: '2',
-      title: 'Philosophy of Mind',
-      description: 'Deep dive into consciousness, free will, and the nature of mental states',
-      nodeCount: 22,
-      depth: 5,
-      createdAt: new Date('2024-01-10'),
-      lastViewed: new Date('2024-01-18'),
-      tags: ['Philosophy', 'Consciousness', 'Mind'],
-      thumbnail: 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=300&h=200&fit=crop',
-      views: 189,
-      xpEarned: 920,
-      category: 'philosophy'
-    },
-    {
-      id: '3',
-      title: 'Quantum Physics Basics',
-      description: 'Understanding the strange world of quantum mechanics and its implications',
-      nodeCount: 18,
-      depth: 3,
-      createdAt: new Date('2024-01-05'),
-      lastViewed: new Date('2024-01-16'),
-      tags: ['Physics', 'Quantum', 'Science'],
-      thumbnail: 'https://images.unsplash.com/photo-1470813740244-df37b8c1edcb?w=300&h=200&fit=crop',
-      views: 312,
-      xpEarned: 680,
-      category: 'science'
-    }
-  ]);
+const UserProfile: React.FC = () => {
+  const [profileData, setProfileData] = useState<UserProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchProfileData = async () => {
+      try {
+        const response = await fetch('/api/user/profile');
+        if (!response.ok) {
+          throw new Error('Failed to fetch profile data');
+        }
+        const data: UserProfileData = await response.json();
+        setProfileData(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfileData();
+  }, []);
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
@@ -125,6 +96,20 @@ const UserProfile: React.FC = () => {
     }
   };
 
+  if (loading) {
+    return <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-900 flex items-center justify-center text-white">Loading...</div>;
+  }
+
+  if (error) {
+    return <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-900 flex items-center justify-center text-red-500">Error: {error}</div>;
+  }
+
+  if (!profileData) {
+    return null;
+  }
+
+  const { userStats, galaxies } = profileData;
+
   const getXPProgress = () => (userStats.currentXP / userStats.xpToNextLevel) * 100;
 
   const filteredGalaxies = selectedCategory === 'all' 
@@ -132,7 +117,13 @@ const UserProfile: React.FC = () => {
     : galaxies.filter(g => g.category === selectedCategory);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6 relative">
+      <Link to="/" className="absolute top-6 left-6 z-10">
+        <Button variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Galaxy
+        </Button>
+      </Link>
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
         <motion.div 
@@ -182,7 +173,7 @@ const UserProfile: React.FC = () => {
           <Card className="bg-white/10 backdrop-blur-lg border-white/20 text-white">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-sm">
-                <Globe className="h-4 w-4" />
+                <Sparkles className="h-4 w-4" />
                 Galaxies Created
               </CardTitle>
             </CardHeader>
@@ -257,7 +248,7 @@ const UserProfile: React.FC = () => {
           <Card className="bg-white/10 backdrop-blur-lg border-white/20 text-white">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Globe className="h-6 w-6" />
+                <Sparkles className="h-6 w-6" />
                 My Knowledge Galaxies
               </CardTitle>
             </CardHeader>

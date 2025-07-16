@@ -1,5 +1,5 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -33,67 +33,132 @@ import {
   Users,
   Eye,
   BookOpen,
-  Award
+  Award,
+  ArrowLeft,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
+interface XPDataPoint {
+    date: string;
+    xp: number;
+    galaxies: number;
+}
+
+interface CategoryDataPoint {
+    name: string;
+    value: number;
+    color: string;
+}
+
+interface StudyTimeDataPoint {
+    day: string;
+    time: number;
+    sessions: number;
+}
+
+interface AchievementStatus {
+    id: number;
+    name: string;
+    desc: string;
+    unlocked: boolean;
+    date?: string;
+    progress?: number;
+}
+
+interface GoalStatus {
+    goal: string;
+    current: number;
+    target: number;
+    icon: string;
+}
+
+interface MappedGoalStatus extends Omit<GoalStatus, 'icon'> {
+    icon: React.ComponentType<{ className?: string }>;
+}
+
+interface RecentActivityItem {
+    action: string;
+    item: string;
+    time: string;
+    xp: number;
+}
+
+interface ProgressTrackingData {
+    xpData: XPDataPoint[];
+    categoryData: CategoryDataPoint[];
+    studyTimeData: StudyTimeDataPoint[];
+    achievements: AchievementStatus[];
+    weeklyGoals: GoalStatus[];
+    recentActivity: RecentActivityItem[];
+}
+
+const iconMap: { [key: string]: React.ComponentType<{ className?: string }> } = {
+    Brain,
+    Clock,
+    Star,
+    Trophy,
+};
+
 const ProgressTracking: React.FC = () => {
-  const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'year'>('week');
+  const [progressData, setProgressData] = useState<(Omit<ProgressTrackingData, 'weeklyGoals'> & { weeklyGoals: MappedGoalStatus[] }) | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const xpData = [
-    { date: '2024-01-01', xp: 100, galaxies: 1 },
-    { date: '2024-01-02', xp: 250, galaxies: 2 },
-    { date: '2024-01-03', xp: 400, galaxies: 3 },
-    { date: '2024-01-04', xp: 600, galaxies: 4 },
-    { date: '2024-01-05', xp: 850, galaxies: 6 },
-    { date: '2024-01-06', xp: 1100, galaxies: 8 },
-    { date: '2024-01-07', xp: 1350, galaxies: 10 },
-  ];
+  useEffect(() => {
+    const fetchProgressData = async () => {
+      try {
+        const response = await fetch('/api/user/progress');
+        if (!response.ok) {
+          throw new Error('Failed to fetch progress data');
+        }
+        const data: ProgressTrackingData = await response.json();
+        
+        // Map icon strings to actual components
+        const mappedGoals: MappedGoalStatus[] = data.weeklyGoals.map(goal => ({
+          ...goal,
+          icon: iconMap[goal.icon] || Target,
+        }));
 
-  const categoryData = [
-    { name: 'Technology', value: 35, color: '#10b981' },
-    { name: 'Science', value: 25, color: '#3b82f6' },
-    { name: 'Philosophy', value: 20, color: '#8b5cf6' },
-    { name: 'Business', value: 15, color: '#f59e0b' },
-    { name: 'Personal', value: 5, color: '#ec4899' },
-  ];
+        setProgressData({ ...data, weeklyGoals: mappedGoals });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const studyTimeData = [
-    { day: 'Mon', time: 45, sessions: 3 },
-    { day: 'Tue', time: 60, sessions: 4 },
-    { day: 'Wed', time: 30, sessions: 2 },
-    { day: 'Thu', time: 75, sessions: 5 },
-    { day: 'Fri', time: 90, sessions: 6 },
-    { day: 'Sat', time: 120, sessions: 8 },
-    { day: 'Sun', time: 85, sessions: 5 },
-  ];
+    fetchProgressData();
+  }, []);
 
-  const achievements = [
-    { id: 1, name: 'First Galaxy', desc: 'Create your first knowledge galaxy', unlocked: true, date: '2024-01-01' },
-    { id: 2, name: 'Deep Thinker', desc: 'Reach depth level 5', unlocked: true, date: '2024-01-05' },
-    { id: 3, name: 'Knowledge Collector', desc: 'Create 10 galaxies', unlocked: true, date: '2024-01-10' },
-    { id: 4, name: 'Time Master', desc: 'Study for 10 hours', unlocked: true, date: '2024-01-15' },
-    { id: 5, name: 'Galaxy Master', desc: 'Create 25 galaxies', unlocked: false, progress: 20 },
-    { id: 6, name: 'Streak Warrior', desc: '30 day streak', unlocked: false, progress: 7 },
-  ];
+  if (loading) {
+    return <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-900 flex items-center justify-center text-white">Loading...</div>;
+  }
 
-  const weeklyGoals = [
-    { goal: 'Create 3 new galaxies', current: 2, target: 3, icon: Brain },
-    { goal: 'Study for 10 hours', current: 7.5, target: 10, icon: Clock },
-    { goal: 'Earn 2000 XP', current: 1650, target: 2000, icon: Star },
-    { goal: 'Maintain 7-day streak', current: 5, target: 7, icon: Trophy },
-  ];
+  if (error) {
+    return <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-900 flex items-center justify-center text-red-500">Error: {error}</div>;
+  }
 
-  const recentActivity = [
-    { action: 'Created galaxy', item: 'Machine Learning Fundamentals', time: '2 hours ago', xp: 750 },
-    { action: 'Completed goal', item: 'Study for 2 hours', time: '4 hours ago', xp: 200 },
-    { action: 'Unlocked achievement', item: 'Deep Thinker', time: '1 day ago', xp: 500 },
-    { action: 'Shared galaxy', item: 'Quantum Physics Basics', time: '2 days ago', xp: 100 },
-    { action: 'Reached level', item: 'Level 12', time: '3 days ago', xp: 1000 },
-  ];
+  if (!progressData) {
+    return null;
+  }
+
+  const {
+    xpData,
+    categoryData,
+    studyTimeData,
+    achievements,
+    weeklyGoals,
+    recentActivity,
+  } = progressData;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6 relative">
+      <Link to="/" className="absolute top-6 left-6 z-10">
+        <Button variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Galaxy
+        </Button>
+      </Link>
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
         <motion.div 

@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { RotateCcw } from 'lucide-react';
@@ -41,8 +40,7 @@ const GalaxyMiniMap: React.FC<GalaxyMiniMapProps> = ({
     const height = canvas.height;
 
     // Clear canvas
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(0, 0, width, height);
+    ctx.clearRect(0, 0, width, height);
 
     // Find bounds of all nodes
     const bounds = notes.reduce(
@@ -54,15 +52,23 @@ const GalaxyMiniMap: React.FC<GalaxyMiniMapProps> = ({
       }),
       { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }
     );
+    
+    if (bounds.minX === Infinity) {
+      return;
+    }
 
     const nodeRange = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
-    const scaleFactor = Math.min(width, height) / (nodeRange * 1.2);
+    const scaleFactor = nodeRange > 0.1 ? Math.min(width, height) / (nodeRange * 1.2) : 1;
 
     // Draw nodes
     notes.forEach(note => {
       if (note.x !== undefined && note.y !== undefined) {
-        const x = ((note.x || 0) - bounds.minX) * scaleFactor + width * 0.1;
-        const y = ((note.y || 0) - bounds.minY) * scaleFactor + height * 0.1;
+        const x = nodeRange > 0.1
+          ? ((note.x - bounds.minX) * scaleFactor) + (width * 0.1)
+          : width / 2;
+        const y = nodeRange > 0.1
+          ? ((note.y - bounds.minY) * scaleFactor) + (height * 0.1)
+          : height / 2;
         
         ctx.fillStyle = `hsl(${200 + note.depth * 40}, 70%, 60%)`;
         ctx.beginPath();
@@ -72,8 +78,8 @@ const GalaxyMiniMap: React.FC<GalaxyMiniMapProps> = ({
     });
 
     // Draw viewport indicator
-    const viewportX = width / 2 + (offset.x * scaleFactor * 0.1);
-    const viewportY = height / 2 + (offset.y * scaleFactor * 0.1);
+    const viewportX = width / 2 + (offset.x * scaleFactor * (nodeRange > 0.1 ? 0.01 : 0));
+    const viewportY = height / 2 + (offset.y * scaleFactor * (nodeRange > 0.1 ? 0.01 : 0));
     const viewportSize = Math.max(20 / scale, 10);
 
     ctx.strokeStyle = 'rgba(241, 196, 15, 0.8)';

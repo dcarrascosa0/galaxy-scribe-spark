@@ -1,21 +1,33 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import KnowledgeGalaxy from '@/components/KnowledgeGalaxy';
 import GalaxyPlaceholder from '@/components/GalaxyPlaceholder';
 import LoadingProgress from '@/components/LoadingProgress';
 import SpeedDial from '@/components/SpeedDial';
 import GeneratePanel, { GenerateConfig } from '@/components/GeneratePanel';
-import HistoryPanel from '@/components/HistoryPanel';
+import HistoryPanel from '@/components/HisotryPanel';
 import NoteInspector from '@/components/NoteInspector';
 import GalaxySearch from '@/components/GalaxySearch';
 import FocusMode from '@/components/FocusMode';
 import GalaxyMiniMap from '@/components/GalaxyMiniMap';
-import KeyboardShortcuts from '@/components/KeyboardShortcuts';
+import KeyboardShortcuts from '@/components/KeyboardShorcut';
 import ThemeSelector from '@/components/ThemeSelector';
 import ExportGalaxy from '@/components/ExportGalaxy';
 import AchievementSystem from '@/components/AchievementSystem';
 import NodePreview from '@/components/NodePreview';
+import UserNav from '@/components/UserNav';
 import { toast } from '@/hooks/use-toast';
+import { 
+  generateNotes, 
+  NoteGenerationRequest, 
+  ProgressUpdate,
+  NoteNode,
+  Language,
+  DepthLevel,
+  TopicComplexity,
+  GenerationType,
+  ProgressType
+} from '@/lib/api';
+import { v4 as uuidv4 } from 'uuid';
 
 interface Note {
   id: string;
@@ -23,9 +35,12 @@ interface Note {
   content: string;
   children: Note[];
   depth: number;
+  parent?: Note | null;
   importance?: number;
   tags?: string[];
   lastViewed?: Date;
+  x?: number;
+  y?: number;
 }
 
 interface HistoryItem {
@@ -48,6 +63,7 @@ interface UserStats {
 
 const Index = () => {
   const [currentNotes, setCurrentNotes] = useState<Note[]>([]);
+  const [positionedNotes, setPositionedNotes] = useState<Note[]>([]);
   const [searchResults, setSearchResults] = useState<Note[]>([]);
   const [isSearchActive, setIsSearchActive] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
@@ -59,6 +75,7 @@ const Index = () => {
   const [generationPhase, setGenerationPhase] = useState('');
   const [generationProgress, setGenerationProgress] = useState(0);
   const [generationStatus, setGenerationStatus] = useState('');
+  const [isShowingPartialGraph, setIsShowingPartialGraph] = useState(false);
   
   const [showGeneratePanel, setShowGeneratePanel] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
@@ -83,48 +100,25 @@ const Index = () => {
   const galaxyRef = useRef<any>(null);
   const sessionStartTime = useRef<Date>(new Date());
 
-  // Enhanced mock data with importance and tags
-  const mockNotes: Note[] = [
-    {
-      id: '1',
-      title: 'Machine Learning Fundamentals',
-      content: 'Machine Learning is a subset of artificial intelligence that enables computers to learn and make decisions from data without being explicitly programmed for every scenario.\n\nKey concepts include:\n- Supervised Learning: Learning from labeled data\n- Unsupervised Learning: Finding patterns in unlabeled data\n- Reinforcement Learning: Learning through interaction and feedback\n\nApplications span across industries from healthcare to finance, making it one of the most transformative technologies of our time.',
-      depth: 0,
-      importance: 5,
-      tags: ['AI', 'Technology', 'Data Science'],
-      lastViewed: new Date(),
-      children: [
-        {
-          id: '2',
-          title: 'Supervised Learning',
-          content: 'Supervised learning uses labeled training data to learn a mapping from inputs to outputs. The algorithm learns from examples where both the input and correct output are provided.\n\nTypes include:\n- Classification: Predicting categories (spam vs. not spam)\n- Regression: Predicting continuous values (house prices)\n\nCommon algorithms: Linear Regression, Decision Trees, Random Forest, Support Vector Machines, Neural Networks.',
-          depth: 1,
-          importance: 4,
-          tags: ['Machine Learning', 'Algorithms'],
-          children: [
-            {
-              id: '3',
-              title: 'Linear Regression',
-              content: 'Linear regression is a fundamental supervised learning algorithm that models the relationship between a dependent variable and independent variables using a linear equation.\n\nKey concepts:\n- Simple Linear Regression: One independent variable\n- Multiple Linear Regression: Multiple independent variables\n- Assumptions: Linearity, independence, homoscedasticity\n\nUse cases: Predicting sales, analyzing relationships between variables, forecasting trends.',
-              depth: 2,
-              importance: 3,
-              tags: ['Regression', 'Statistics'],
-              children: []
-            }
-          ]
-        },
-        {
-          id: '4',
-          title: 'Unsupervised Learning',
-          content: 'Unsupervised learning finds hidden patterns in data without labeled examples. The algorithm must discover structure in the input data on its own.\n\nMain types:\n- Clustering: Grouping similar data points\n- Association Rules: Finding relationships between variables\n- Dimensionality Reduction: Simplifying data while preserving important information\n\nApplications: Customer segmentation, anomaly detection, data compression.',
-          depth: 1,
-          importance: 4,
-          tags: ['Machine Learning', 'Clustering'],
-          children: []
-        }
-      ]
-    }
-  ];
+  const convertNoteNodeToNote = (node: NoteNode, depth = 0, parent: Note | null = null): Note => {
+    const newNote: Note = {
+      id: uuidv4(),
+      title: node.title,
+      content: node.content,
+      depth: depth,
+      tags: node.key_terms || [],
+      parent: parent,
+      children: []
+    };
+
+    newNote.children = node.children.map(child => convertNoteNodeToNote(child, depth + 1, newNote));
+
+    return newNote;
+  }
+
+  const countNodes = (note: Note): number => {
+    return 1 + note.children.reduce((acc, child) => acc + countNodes(child), 0);
+  }
 
   // Track session time
   useEffect(() => {
@@ -197,69 +191,125 @@ const Index = () => {
     setUserStats(prev => ({ ...prev, ...updates }));
   };
 
-  const simulateGeneration = async (config: GenerateConfig) => {
+  const handleGenerate = async (config: GenerateConfig) => {
     setIsGenerating(true);
     setShowGeneratePanel(false);
-    
-    const phases = [
-      { name: 'Initializing AI', duration: 1200, status: 'Preparing advanced neural networks...' },
-      { name: 'Analyzing Context', duration: 1800, status: 'Understanding knowledge domain...' },
-      { name: 'Building Structure', duration: 2500, status: 'Creating interconnected hierarchy...' },
-      { name: 'Generating Content', duration: 3500, status: 'Writing comprehensive notes...' },
-      { name: 'Optimizing Layout', duration: 1000, status: 'Positioning nodes in space...' },
-      { name: 'Finalizing Galaxy', duration: 800, status: 'Adding visual enhancements...' }
-    ];
+    setGenerationProgress(0);
+    setGenerationPhase('Initializing');
+    setGenerationStatus('Starting generation process...');
+    setIsShowingPartialGraph(false);
+    let partialGraphShown = false;
 
-    let totalProgress = 0;
-    const progressIncrement = 100 / phases.length;
-
-    for (const phase of phases) {
-      setGenerationPhase(phase.name);
-      setGenerationStatus(phase.status);
-      
-      const startProgress = totalProgress;
-      const endProgress = totalProgress + progressIncrement;
-      
-      await new Promise(resolve => {
-        const interval = setInterval(() => {
-          totalProgress += 1.5;
-          if (totalProgress >= endProgress) {
-            totalProgress = endProgress;
-            setGenerationProgress(totalProgress);
-            clearInterval(interval);
-            resolve(void 0);
-          } else {
-            setGenerationProgress(totalProgress);
-          }
-        }, phase.duration / (progressIncrement / 1.5));
-      });
+    const generationMap = {
+      'comprehensive': { depth_level: DepthLevel.DEEP_DIVE, topic_complexity: TopicComplexity.COMPLEX },
+      'concise': { depth_level: DepthLevel.BASIC, topic_complexity: TopicComplexity.SIMPLE },
+      'academic': { depth_level: DepthLevel.DEEP_DIVE, topic_complexity: TopicComplexity.COMPLEX },
+      'creative': { depth_level: DepthLevel.INTERMEDIATE, topic_complexity: TopicComplexity.MEDIUM },
     }
 
-    const newHistoryItem: HistoryItem = {
-      id: Date.now().toString(),
-      topic: config.topic,
-      createdAt: new Date(),
-      noteCount: 4,
-      depth: config.depth,
-      notes: mockNotes
-    };
+    const { depth_level, topic_complexity } = generationMap[config.style as keyof typeof generationMap] || generationMap.comprehensive;
 
-    setHistory(prev => [newHistoryItem, ...prev]);
-    setCurrentNotes(mockNotes);
-    setIsGenerating(false);
+    const request: NoteGenerationRequest = {
+      topic: config.topic,
+      generation_type: GenerationType.TOPIC,
+      language: Language.ENGLISH, // Or make this configurable
+      max_depth: config.depth,
+      depth_level,
+      topic_complexity,
+    };
     
-    // Update user stats
-    updateUserStats({
-      notesCreated: userStats.notesCreated + 1,
-      sessionsCount: userStats.sessionsCount + 1,
-      deepestDepth: Math.max(userStats.deepestDepth, config.depth)
-    });
-    
-    toast({
-      title: "Knowledge Galaxy Generated! ✨",
-      description: `Successfully created notes for "${config.topic}" with enhanced AI`,
-    });
+    try {
+      await generateNotes(request, (update: ProgressUpdate) => {
+        if(update.progress) setGenerationProgress(update.progress * 100);
+        if(update.message) setGenerationStatus(update.message);
+
+        if (update.data && (update.type === 'progress' || update.type === 'result')) {
+          const notes = [convertNoteNodeToNote(update.data)];
+          setCurrentNotes(notes);
+          if (!partialGraphShown && update.type === 'progress') {
+            const hasContent = (note: Note): boolean => {
+              if (note.content) return true;
+              return note.children.some(hasContent);
+            }
+            if (notes.length > 0 && hasContent(notes[0])) {
+              partialGraphShown = true;
+              setIsShowingPartialGraph(true);
+            }
+          }
+        }
+
+        switch (update.type) {
+          case "status":
+            if (update.message) {
+              if (update.message.includes("structure")) {
+                setGenerationPhase('Building Structure');
+              } else if (update.message.includes("content")) {
+                setGenerationPhase('Generating Content');
+              } else {
+                setGenerationPhase(update.message);
+              }
+            } else {
+              setGenerationPhase('Updating...');
+            }
+            break;
+          case "progress":
+            // The data handling is now done above the switch
+            break;
+          case "result":
+            if (update.data) {
+              const notes = [convertNoteNodeToNote(update.data)];
+              setCurrentNotes(notes);
+
+              const totalNodes = notes.length > 0 ? countNodes(notes[0]) : 0;
+              const newHistoryItem: HistoryItem = {
+                id: Date.now().toString(),
+                topic: config.topic,
+                createdAt: new Date(),
+                noteCount: totalNodes,
+                depth: config.depth,
+                notes: notes
+              };
+          
+              setHistory(prev => [newHistoryItem, ...prev]);
+              
+              updateUserStats({
+                notesCreated: userStats.notesCreated + 1,
+                sessionsCount: userStats.sessionsCount + 1,
+                deepestDepth: Math.max(userStats.deepestDepth, config.depth)
+              });
+
+              toast({
+                title: "Knowledge Galaxy Generated! ✨",
+                description: `Successfully created notes for "${config.topic}"`,
+              });
+            }
+            setIsGenerating(false);
+            setIsShowingPartialGraph(false);
+            setGenerationPhase('Complete');
+            break;
+          case "error":
+            toast({
+              title: "Generation Error 😭",
+              description: update.message,
+              variant: "destructive",
+            });
+            setIsGenerating(false);
+            setIsShowingPartialGraph(false);
+            break;
+        }
+      });
+    } catch (error) {
+      console.error("Generation failed:", error);
+      toast({
+        title: "Generation Failed 😭",
+        description: "An unexpected error occurred. Check the console for details.",
+        variant: "destructive",
+      });
+      setIsGenerating(false);
+      setIsShowingPartialGraph(false);
+    }
   };
+
 
   const handleNodeClick = (note: Note) => {
     setSelectedNote(note);
@@ -349,11 +399,44 @@ const Index = () => {
   };
 
   const getBreadcrumbs = (note: Note): Note[] => {
-    return [note];
+    const crumbs: Note[] = [];
+    let current: Note | null | undefined = note;
+    while(current) {
+      crumbs.unshift(current);
+      current = current.parent;
+    }
+    return crumbs;
   };
 
   const renderMainContent = () => {
     if (isGenerating) {
+      if (isShowingPartialGraph) {
+        return (
+          <>
+            <KnowledgeGalaxy
+              ref={galaxyRef}
+              notes={currentNotes}
+              onNodeClick={handleNodeClick}
+              onNodeHover={handleNodeHover}
+              selectedNodeId={selectedNote?.id}
+              focusMode={isFocusMode}
+              searchResults={isSearchActive ? searchResults : undefined}
+              onScaleChange={setGalaxyScale}
+              onOffsetChange={setGalaxyOffset}
+              onNodesPositioned={setPositionedNotes}
+              theme={currentTheme}
+            />
+            <div className="fixed top-4 left-4 z-50 w-full max-w-sm animate-fade-in">
+              <LoadingProgress
+                compact
+                phase={generationPhase}
+                progress={generationProgress}
+                status={generationStatus}
+              />
+            </div>
+          </>
+        );
+      }
       return (
         <LoadingProgress
           phase={generationPhase}
@@ -366,9 +449,7 @@ const Index = () => {
     if (currentNotes.length === 0) {
       return <GalaxyPlaceholder />;
     }
-
     const displayNotes = isSearchActive ? searchResults : currentNotes;
-
     return (
       <KnowledgeGalaxy
         ref={galaxyRef}
@@ -380,6 +461,7 @@ const Index = () => {
         searchResults={isSearchActive ? searchResults : undefined}
         onScaleChange={setGalaxyScale}
         onOffsetChange={setGalaxyOffset}
+        onNodesPositioned={setPositionedNotes}
         theme={currentTheme}
       />
     );
@@ -399,6 +481,20 @@ const Index = () => {
         />
       </main>
 
+      <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
+        {currentNotes.length > 0 && (
+          <FocusMode
+            isActive={isFocusMode}
+            onToggle={() => setIsFocusMode(!isFocusMode)}
+          />
+        )}
+        <ThemeSelector
+          currentTheme={currentTheme}
+          onThemeChange={handleThemeChange}
+        />
+        <UserNav />
+      </div>
+
       {/* Enhanced Search Bar */}
       {currentNotes.length > 0 && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-40">
@@ -411,25 +507,15 @@ const Index = () => {
       )}
 
       {/* Focus Mode Toggle */}
-      {currentNotes.length > 0 && (
-        <FocusMode
-          isActive={isFocusMode}
-          onToggle={() => setIsFocusMode(!isFocusMode)}
-        />
-      )}
+      {/* This is now part of the top-right container */}
 
       {/* Theme Selector */}
-      <div className="fixed top-4 right-20 z-40">
-        <ThemeSelector
-          currentTheme={currentTheme}
-          onThemeChange={handleThemeChange}
-        />
-      </div>
+      {/* This is now part of the top-right container */}
 
       {/* Enhanced Mini Map */}
       {currentNotes.length > 0 && (
         <GalaxyMiniMap
-          notes={currentNotes}
+          notes={positionedNotes}
           scale={galaxyScale}
           offset={galaxyOffset}
           onNavigate={handleNavigateToNode}
@@ -458,7 +544,7 @@ const Index = () => {
       <GeneratePanel
         isOpen={showGeneratePanel}
         onClose={() => setShowGeneratePanel(false)}
-        onGenerate={simulateGeneration}
+        onGenerate={handleGenerate}
       />
 
       <HistoryPanel
