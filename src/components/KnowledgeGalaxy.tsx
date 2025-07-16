@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { Button } from '@/components/ui/button';
+import { ChevronUp, ChevronRight, X } from 'lucide-react';
 
 interface Note {
   id: string;
@@ -15,6 +17,7 @@ interface Note {
   importance?: number;
   tags?: string[];
   lastViewed?: Date;
+  parent?: Note | null;
 }
 
 interface KnowledgeGalaxyProps {
@@ -29,6 +32,23 @@ interface KnowledgeGalaxyProps {
   showTutorial?: boolean;
   onNodeHover?: (note: Note | null) => void;
   onNodesPositioned?: (nodes: Note[]) => void;
+  showIntegratedOverlay?: boolean;
+}
+
+interface CameraState {
+  scale: number;
+  offset: { x: number; y: number };
+  targetScale: number;
+  targetOffset: { x: number; y: number };
+  isAnimating: boolean;
+  animationStart: number;
+  animationDuration: number;
+}
+
+interface NoteOverlay {
+  note: Note;
+  position: { x: number; y: number };
+  visible: boolean;
 }
 
 const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({ 
@@ -42,13 +62,12 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
   theme = 'cosmic',
   showTutorial = false,
   onNodeHover,
-  onNodesPositioned
+  onNodesPositioned,
+  showIntegratedOverlay = true
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
   const [nodes, setNodes] = useState<Note[]>([]);
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [lastMouse, setLastMouse] = useState({ x: 0, y: 0 });
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
@@ -74,8 +93,257 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
   }>>([]);
   const [animationState, setAnimationState] = useState<Record<string, { startTime: number }>>({});
 
+  // Enhanced camera state with smooth animation support (600ms duration)
+  const [camera, setCamera] = useState<CameraState>({
+    scale: 1,
+    offset: { x: 0, y: 0 },
+    targetScale: 1,
+    targetOffset: { x: 0, y: 0 },
+    isAnimating: false,
+    animationStart: 0,
+    animationDuration: 600 // 600ms as specified
+  });
+
+  // Note overlay state
+  const [noteOverlay, setNoteOverlay] = useState<NoteOverlay | null>(null);
+
   // Expose canvas ref to parent
   useImperativeHandle(ref, () => canvasRef.current!);
+
+  // Cubic-bezier easing function for smooth, professional animations
+  // Equivalent to CSS cubic-bezier(0.25, 0.46, 0.45, 0.94) - easeOutQuad
+  const cubicBezierEasing = (t: number): number => {
+    return 1 - Math.pow(1 - t, 3);
+  };
+
+  // Camera animation system with optimized performance
+  const animateCamera = useCallback(() => {
+    if (!camera.isAnimating) return;
+
+    const now = Date.now();
+    const elapsed = now - camera.animationStart;
+    const progress = Math.min(elapsed / camera.animationDuration, 1);
+    const easedProgress = cubicBezierEasing(progress);
+
+    // Interpolate camera properties with eased progress
+    const currentScale = camera.scale + (camera.targetScale - camera.scale) * easedProgress;
+    const currentOffsetX = camera.offset.x + (camera.targetOffset.x - camera.offset.x) * easedProgress;
+    const currentOffsetY = camera.offset.y + (camera.targetOffset.y - camera.offset.y) * easedProgress;
+
+    console.log('Animation progress:', progress, 'eased:', easedProgress);
+    console.log('Current scale:', currentScale, 'offset:', currentOffsetX, currentOffsetY);
+
+    setCamera(prev => ({
+      ...prev,
+      scale: currentScale,
+      offset: { x: currentOffsetX, y: currentOffsetY }
+    }));
+
+    // Notify parent components of camera changes
+    onScaleChange?.(currentScale);
+    onOffsetChange?.({ x: currentOffsetX, y: currentOffsetY });
+
+    // Complete animation when progress reaches 1
+    if (progress >= 1) {
+      console.log('Animation complete');
+      setCamera(prev => ({ ...prev, isAnimating: false }));
+    }
+  }, [camera.isAnimating, camera.animationStart, camera.animationDuration, camera.scale, camera.targetScale, camera.offset, camera.targetOffset, onScaleChange, onOffsetChange]);
+
+  // Focus camera on specific node with smooth zoom and recenter
+  // Performance: Calculates optimal zoom level and center position
+  const focusOnNode = useCallback((node: Note) => {
+    if (!node.x || !node.y) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Calculate optimal zoom level (1.8x to 2.2x current scale)
+    const targetScale = Math.max(1.8, Math.min(2.2, camera.scale * 1.5));
+    
+    // Calculate center position to focus on the node
+    const targetOffsetX = -node.x * targetScale + canvas.width / 2;
+    const targetOffsetY = -node.y * targetScale + canvas.height / 2;
+
+    console.log('Focusing on node:', node.title, 'at', node.x, node.y);
+    console.log('Target scale:', targetScale, 'Target offset:', targetOffsetX, targetOffsetY);
+
+    // Start smooth animation
+    setCamera(prev => {
+      console.log('Starting animation, current isAnimating:', prev.isAnimating);
+      return {
+        ...prev,
+        targetScale,
+        targetOffset: { x: targetOffsetX, y: targetOffsetY },
+        isAnimating: true,
+        animationStart: Date.now()
+      };
+    });
+  }, [camera.scale]);
+
+  // Dynamic overlay positioning with edge detection and adaptive placement
+  // Performance: Cached calculations, minimal DOM queries
+  const calculateOverlayPosition = useCallback((node: Note): { x: number; y: number } => {
+    const canvas = canvasRef.current;
+    if (!canvas || node.x == null || node.y == null) return { x: 20, y: 20 };
+  
+    const screenX = node.x * camera.scale + camera.offset.x + canvas.width  / 2;
+    const screenY = node.y * camera.scale + camera.offset.y + canvas.height / 2;
+    const overlayW = 320;
+    const overlayH = 240;
+    const offset   = 50;
+  
+    // try right‑side first
+    let x = screenX + offset;
+    let y = screenY - overlayH / 2;
+  
+    // if that would overflow right, put it on the left
+    if (x + overlayW > canvas.width - 20) {
+      x = screenX - overlayW - offset;
+    }
+    // only clamp *this* left‑side if it still overflows
+    if (x < 20) {
+      x = 20;
+    }
+  
+    // vertically: clamp top and bottom
+    if (y < 20) {
+      y = 20;
+    } else if (y + overlayH > canvas.height - 20) {
+      y = canvas.height - overlayH - 20;
+    }
+  
+    return { x, y };
+  }, [camera.scale, camera.offset]);
+
+  // Navigation utility functions with hierarchy traversal
+  // Performance: O(1) parent lookup, O(n) sibling lookup where n = siblings count
+  
+  const findParentNode = useCallback((node: Note): Note | null => {
+    return node.parent || null;
+  }, []);
+
+  const findNextSibling = useCallback((node: Note): Note | null => {
+    const parent = findParentNode(node);
+    if (!parent) return null;
+
+    const siblings = parent.children;
+    const currentIndex = siblings.findIndex(sibling => sibling.id === node.id);
+    
+    // Return next sibling or null if at end
+    return (currentIndex !== -1 && currentIndex < siblings.length - 1) 
+      ? siblings[currentIndex + 1] 
+      : null;
+  }, [findParentNode]);
+
+  // Navigation handlers with smooth camera transitions
+  
+  const handleJumpToParent = useCallback(() => {
+    if (!noteOverlay) return;
+    
+    const parent = findParentNode(noteOverlay.note);
+    if (parent) {
+      // Update overlay with new position
+      const position = calculateOverlayPosition(parent);
+      setNoteOverlay({
+        note: parent,
+        position,
+        visible: true
+      });
+      
+      // Notify parent component
+      onNodeClick(parent);
+    }
+  }, [noteOverlay, findParentNode, calculateOverlayPosition, onNodeClick]);
+
+
+
+  const handleCloseOverlay = useCallback(() => {
+    setNoteOverlay(null);
+  }, []);
+
+  // Enhanced node click handler with integrated camera animation and overlay
+  // Performance: Single event handler, batched state updates
+  const handleNodeClick = useCallback((clickedNode: Note) => {
+    console.log('Node clicked:', clickedNode.title);
+    
+    // Only show overlay if showIntegratedOverlay is true
+    if (showIntegratedOverlay) {
+      const position = calculateOverlayPosition(clickedNode);
+      setNoteOverlay({
+        note: clickedNode,
+        position,
+        visible: true
+      });
+    } else {
+      // Clear any existing overlay when NoteInspector is open
+      setNoteOverlay(null);
+    }
+
+    // Create visual interaction effect
+    const themeColors = getThemeColors(theme);
+    const color = themeColors.nodes[clickedNode.depth % themeColors.nodes.length];
+    createInteractionEffect(
+      clickedNode.x!,
+      clickedNode.y!,
+      'click',
+      `rgb(${color.r}, ${color.g}, ${color.b})`
+    );
+
+    // Notify parent component
+    onNodeClick(clickedNode);
+  }, [calculateOverlayPosition, theme, onNodeClick, showIntegratedOverlay]);
+
+  const handleAdvanceToNextSibling = useCallback(() => {
+    if (!noteOverlay) return;
+    const next = findNextSibling(noteOverlay.note);
+    if (!next) return;
+  
+    // 1) act exactly like a real click:
+    handleNodeClick(next);
+  
+    // 2) then start the camera animation
+    focusOnNode(next);
+  }, [
+    noteOverlay,
+    findNextSibling,
+    handleNodeClick,
+    focusOnNode
+  ]);
+  // Update overlay position during camera movements
+  // Performance: Only updates when overlay is visible
+  useEffect(() => {
+    if (noteOverlay?.visible) {
+      const newPos = calculateOverlayPosition(noteOverlay.note);
+      // compare against the last position
+      if (
+        newPos.x !== noteOverlay.position.x ||
+        newPos.y !== noteOverlay.position.y
+      ) {
+        setNoteOverlay(prev => prev && { ...prev, position: newPos });
+      }
+    }
+  }, [camera.scale, camera.offset, noteOverlay, calculateOverlayPosition]);
+
+  // Camera animation loop with RAF optimization and timeout safety
+  useEffect(() => {
+    if (camera.isAnimating) {
+      const animate = () => {
+        animateCamera();
+        if (camera.isAnimating) {
+          requestAnimationFrame(animate);
+        }
+      };
+      requestAnimationFrame(animate);
+      
+      // Safety timeout to prevent stuck animations
+      const timeout = setTimeout(() => {
+        setCamera(prev => ({ ...prev, isAnimating: false }));
+      }, camera.animationDuration + 100); // Add 100ms buffer
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [camera.isAnimating, animateCamera, camera.animationDuration]);
 
   useEffect(() => {
     const now = Date.now();
@@ -100,6 +368,8 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
         setAnimationState(nextAnimationState);
     }
   }, [notes]);
+
+  
 
   // Generate enhanced particle system
   useEffect(() => {
@@ -200,7 +470,7 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
     const depthIncrement = 50 * scaleFactor;
     const leafPullIn = 200 * scaleFactor;
     
-    const traverse = (note: Note, depth: number, parentX = 0, parentY = 0, angle = 0) => {
+    const traverse = (note: Note, depth: number, parentX = 0, parentY = 0, angle = 0, parent: Note | null = null) => {
       const isRoot = depth === 0;
 
       // 3. Calculate radius for the current node.
@@ -225,7 +495,8 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
         targetX: nodeX,
         targetY: nodeY,
         vx: 0,
-        vy: 0
+        vy: 0,
+        parent: parent
       };
       
       allNodes.push(nodeWithPosition);
@@ -244,14 +515,14 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
             currentSlot++;
           }
           const childAngle = currentSlot * angleStep;
-          traverse(child, depth + 1, nodeX, nodeY, childAngle);
+          traverse(child, depth + 1, nodeX, nodeY, childAngle, nodeWithPosition);
           currentSlot++;
         });
       }
     };
 
     noteData.forEach((note) => {
-      traverse(note, 0, 0, 0, 0); 
+      traverse(note, 0, 0, 0, 0, null); 
     });
 
     setNodes(allNodes);
@@ -479,12 +750,12 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
     }
 
     // Enhanced title rendering with better styling
-    if (scale > 0.5) {
+    if (camera.scale > 0.5) {
       ctx.shadowBlur = 0;
       const isDark = document.documentElement.classList.contains('dark');
       const textColor = isDark ? '#ffffff' : '#1a1a1a';
       
-      const fontSize = Math.min(16 * scale, 16);
+      const fontSize = Math.min(16 * camera.scale, 16);
       const fontWeight = isSelected ? 'bold' : 'normal';
       ctx.font = `${fontWeight} ${fontSize}px "Inter", -apple-system, BlinkMacSystemFont, sans-serif`;
       
@@ -672,8 +943,8 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
     
     // Set transform
     ctx.save();
-    ctx.translate(canvas.width / 2 + offset.x, canvas.height / 2 + offset.y);
-    ctx.scale(scale, scale);
+    ctx.translate(canvas.width / 2 + camera.offset.x, canvas.height / 2 + camera.offset.y);
+    ctx.scale(camera.scale, camera.scale);
 
     // Draw enhanced connections
     nodes.forEach(node => {
@@ -696,7 +967,7 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
     ctx.restore();
     
     animationRef.current = requestAnimationFrame(animate);
-  }, [nodes, scale, offset, selectedNodeId, hoveredNode, particles, interactionEffects, focusMode, searchResults, theme, animationState]);
+  }, [nodes, camera.scale, camera.offset, selectedNodeId, hoveredNode, particles, interactionEffects, focusMode, searchResults, theme, animationState]);
 
   useEffect(() => {
     animationRef.current = requestAnimationFrame(animate);
@@ -717,31 +988,13 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
 
     const clickedNode = getNodeAtPosition(mouseX, mouseY);
     if (clickedNode) {
-      const themeColors = getThemeColors(theme);
-      const color = themeColors.nodes[clickedNode.depth % themeColors.nodes.length];
-      createInteractionEffect(
-        (mouseX - canvas.width / 2 - offset.x) / scale,
-        (mouseY - canvas.height / 2 - offset.y) / scale,
-        'click',
-        `rgb(${color.r}, ${color.g}, ${color.b})`
-      );
-      onNodeClick(clickedNode);
+      handleNodeClick(clickedNode);
       return;
     }
 
     setIsDragging(true);
     setLastMouse({ x: mouseX, y: mouseY });
     setVelocity({ x: 0, y: 0 });
-  };
-
-  const handleScaleChange = (newScale: number) => {
-    setScale(newScale);
-    onScaleChange?.(newScale);
-  };
-
-  const handleOffsetChange = (newOffset: { x: number; y: number }) => {
-    setOffset(newOffset);
-    onOffsetChange?.(newOffset);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -763,8 +1016,8 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
         const themeColors = getThemeColors(theme);
         const color = themeColors.nodes[hoveredNode.depth % themeColors.nodes.length];
         createInteractionEffect(
-          (mouseX - canvas.width / 2 - offset.x) / scale,
-          (mouseY - canvas.height / 2 - offset.y) / scale,
+          (mouseX - canvas.width / 2 - camera.offset.x) / camera.scale,
+          (mouseY - canvas.height / 2 - camera.offset.y) / camera.scale,
           'hover',
           `rgb(${color.r}, ${color.g}, ${color.b})`
         );
@@ -777,10 +1030,12 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
       
       setVelocity({ x: deltaX * 0.1, y: deltaY * 0.1 });
       const newOffset = {
-        x: offset.x + deltaX,
-        y: offset.y + deltaY
+        x: camera.offset.x + deltaX,
+        y: camera.offset.y + deltaY
       };
-      handleOffsetChange(newOffset);
+      
+      setCamera(prev => ({ ...prev, offset: newOffset }));
+      onOffsetChange?.(newOffset);
       
       setLastMouse({ x: mouseX, y: mouseY });
     }
@@ -794,9 +1049,12 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
       setVelocity(prev => {
         const newVel = { x: prev.x * 0.95, y: prev.y * 0.95 };
         if (Math.abs(newVel.x) > 0.1 || Math.abs(newVel.y) > 0.1) {
-          setOffset(prevOffset => ({
-            x: prevOffset.x + newVel.x,
-            y: prevOffset.y + newVel.y
+          setCamera(prevCamera => ({
+            ...prevCamera,
+            offset: {
+              x: prevCamera.offset.x + newVel.x,
+              y: prevCamera.offset.y + newVel.y
+            }
           }));
           requestAnimationFrame(applyInertia);
         }
@@ -811,17 +1069,36 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    
     const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = Math.max(0.1, Math.min(3, scale * zoomFactor));
-    handleScaleChange(newScale);
+    const newScale = Math.max(0.1, Math.min(3, camera.scale * zoomFactor));
+    
+    setCamera(prev => ({ ...prev, scale: newScale }));
+    onScaleChange?.(newScale);
   };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+  
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      handleWheel(e as any);
+    };
+  
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+  
+    return () => {
+      canvas.removeEventListener('wheel', onWheel);
+    };
+  }, [handleWheel]);
 
   const getNodeAtPosition = (mouseX: number, mouseY: number): Note | null => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
 
-    const canvasX = (mouseX - canvas.width / 2 - offset.x) / scale;
-    const canvasY = (mouseY - canvas.height / 2 - offset.y) / scale;
+    const canvasX = (mouseX - canvas.width / 2 - camera.offset.x) / camera.scale;
+    const canvasY = (mouseY - canvas.height / 2 - camera.offset.y) / camera.scale;
 
     return nodes.find(node => {
       const distance = Math.sqrt(
@@ -847,16 +1124,119 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="w-full h-full cursor-grab active:cursor-grabbing"
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onWheel={handleWheel}
-      style={{ display: 'block' }}
-    />
+    <div className="relative w-full h-full">
+      <canvas
+        ref={canvasRef}
+        className="w-full h-full cursor-grab active:cursor-grabbing"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        style={{ display: 'block', pointerEvents: 'auto' }}
+      />
+      
+      {/* Galaxy-Themed Integrated Note Overlay */}
+      {noteOverlay && noteOverlay.visible && showIntegratedOverlay && (
+        <div
+          className="fixed z-50 w-80 max-h-96 glass-panel rounded-xl shadow-2xl animate-scale-in border border-white/10 pointer-events-none"
+          style={{
+            left: `${noteOverlay.position.x}px`,
+            top: `${noteOverlay.position.y}px`,
+            background: 'linear-gradient(135deg, rgba(11, 20, 38, 0.95) 0%, rgba(26, 35, 50, 0.95) 50%, rgba(44, 62, 80, 0.95) 100%)',
+            backdropFilter: 'blur(20px)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 30px rgba(52, 152, 219, 0.2)',
+          }}
+        >
+          {/* Cosmic Header with Gradient Border */}
+          <div className="relative p-4 border-b border-white/10">
+            <div 
+              className="absolute inset-0 rounded-t-xl opacity-30"
+              style={{
+                background: 'linear-gradient(90deg, rgba(52, 152, 219, 0.3) 0%, rgba(142, 68, 173, 0.3) 50%, rgba(241, 196, 15, 0.3) 100%)'
+              }}
+            />
+            <div className="relative flex items-center justify-between pointer-events-auto">
+              <h3 className="font-semibold text-lg text-white truncate pr-2 drop-shadow-lg">
+                {noteOverlay.note.title}
+              </h3>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 flex-shrink-0 text-white/70 hover:text-white hover:bg-white/10 transition-all duration-200"
+                onClick={handleCloseOverlay}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          
+          {/* Note Content with Cosmic Styling */}
+          <div className="p-4 max-h-48 overflow-y-auto custom-scrollbar">
+            <p className="text-sm text-white/90 leading-relaxed">
+              {noteOverlay.note.content}
+            </p>
+          </div>
+          
+          {/* Navigation Controls with Galaxy Theme */}
+          <div className="flex gap-2 p-4 border-t border-white/10 pointer-events-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 flex items-center gap-2 bg-white/5 border-white/20 text-white hover:bg-white/10 hover:border-white/30 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={handleJumpToParent}
+              disabled={!findParentNode(noteOverlay.note)}
+            >
+              <ChevronUp className="h-4 w-4" />
+              Jump to Parent
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 flex items-center gap-2 bg-white/5 border-white/20 text-white hover:bg-white/10 hover:border-white/30 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={handleAdvanceToNextSibling}
+              disabled={!findNextSibling(noteOverlay.note)}
+            >
+              <ChevronRight className="h-4 w-4" />
+              Next Sibling
+            </Button>
+          </div>
+          
+          {/* Depth and Stats Indicator */}
+          <div className="px-4 pb-3">
+            <div className="flex items-center justify-between text-xs text-white/60">
+              <span>Depth Level: {noteOverlay.note.depth + 1}</span>
+              <span>{noteOverlay.note.children.length} children</span>
+            </div>
+          </div>
+          
+          {/* Cosmic Glow Effect */}
+          <div 
+            className="absolute inset-0 rounded-xl pointer-events-none opacity-20"
+            style={{
+              background: 'radial-gradient(circle at 50% 0%, rgba(52, 152, 219, 0.3) 0%, transparent 70%)',
+            }}
+          />
+        </div>
+      )}
+      
+      {/* Custom Scrollbar Styles */}
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(52, 152, 219, 0.6);
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(52, 152, 219, 0.8);
+        }
+      `}</style>
+    </div>
   );
 });
 

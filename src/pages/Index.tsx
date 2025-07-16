@@ -5,7 +5,7 @@ import LoadingProgress from '@/components/LoadingProgress';
 import SpeedDial from '@/components/SpeedDial';
 import GeneratePanel, { GenerateConfig } from '@/components/GeneratePanel';
 import HistoryPanel from '@/components/HisotryPanel';
-import NoteInspector from '@/components/NoteInspector';
+
 import GalaxySearch from '@/components/GalaxySearch';
 import FocusMode from '@/components/FocusMode';
 import GalaxyMiniMap from '@/components/GalaxyMiniMap';
@@ -15,6 +15,7 @@ import ExportGalaxy from '@/components/ExportGalaxy';
 import AchievementSystem from '@/components/AchievementSystem';
 import NodePreview from '@/components/NodePreview';
 import UserNav from '@/components/UserNav';
+import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { 
   generateNotes, 
@@ -79,7 +80,7 @@ const Index = () => {
   
   const [showGeneratePanel, setShowGeneratePanel] = useState(false);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
-  const [showNoteInspector, setShowNoteInspector] = useState(false);
+  const [preferIntegratedOverlay, setPreferIntegratedOverlay] = useState(true);
   
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [hoveredNote, setHoveredNote] = useState<Note | null>(null);
@@ -107,7 +108,7 @@ const Index = () => {
       const rootNote: Note = {
         id: 'scratch-root',
         title: 'Advanced Machine Learning Systems',
-        content: 'Advanced Machine Learning encompasses deep learning architectures, distributed training systems, and production-scale ML pipelines that power modern AI applications.',
+        content: 'Advanced Machine Learning Systems cover a broad spectrum of modern AI techniques, encompassing complex neural network architectures, scalable distributed training setups, and robust MLOps pipelines. These systems allow large-scale deployment, maintenance, and enhancement of machine learning models that power sophisticated AI-driven applications across industries.',
         depth: 0,
         children: [],
         importance: 5,
@@ -118,7 +119,7 @@ const Index = () => {
       const neuralNetworks: Note = {
         id: 'scratch-neural',
         title: 'Neural Network Architectures',
-        content: 'Neural networks form the backbone of modern deep learning, with various architectures optimized for different types of data and tasks.',
+        content: 'Neural Networks are foundational models that underpin modern deep learning. These structures emulate biological neural systems and are specialized for diverse tasks such as visual recognition, language understanding, and sequential data modeling. They are designed with multiple layers of interconnected nodes that progressively learn and represent complex patterns within data.',
         depth: 1,
         parent: rootNote,
         children: [],
@@ -338,7 +339,6 @@ const Index = () => {
           e.preventDefault();
           setShowGeneratePanel(false);
           setShowHistoryPanel(false);
-          setShowNoteInspector(false);
           setShowKeyboardShortcuts(false);
           setShowAchievements(false);
           break;
@@ -352,6 +352,7 @@ const Index = () => {
           e.preventDefault();
           setShowHistoryPanel(true);
           break;
+
         case 'f':
         case 'F':
           e.preventDefault();
@@ -367,6 +368,7 @@ const Index = () => {
           e.preventDefault();
           setShowAchievements(true);
           break;
+
       }
     };
 
@@ -500,7 +502,6 @@ const Index = () => {
 
   const handleNodeClick = (note: Note) => {
     setSelectedNote(note);
-    setShowNoteInspector(true);
     
     // Update last viewed
     const updatedNote = { ...note, lastViewed: new Date() };
@@ -612,6 +613,7 @@ const Index = () => {
               onOffsetChange={setGalaxyOffset}
               onNodesPositioned={setPositionedNotes}
               theme={currentTheme}
+              showIntegratedOverlay={true}
             />
             <div className="fixed top-4 left-4 z-50 w-full max-w-sm animate-fade-in">
               <LoadingProgress
@@ -650,6 +652,7 @@ const Index = () => {
         onOffsetChange={setGalaxyOffset}
         onNodesPositioned={setPositionedNotes}
         theme={currentTheme}
+        showIntegratedOverlay={true}
       />
     );
   };
@@ -664,7 +667,7 @@ const Index = () => {
         <NodePreview
           note={hoveredNote}
           position={nodePreviewPosition}
-          isVisible={!!hoveredNote && !showNoteInspector}
+          isVisible={!!hoveredNote}
         />
       </main>
 
@@ -680,6 +683,19 @@ const Index = () => {
           onThemeChange={handleThemeChange}
         />
         <UserNav />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            toast({
+              title: "Integrated Overlay Mode",
+              description: "Notes show as floating overlay",
+            });
+          }}
+          className="h-8 px-3 text-xs"
+        >
+          💫 Overlay
+        </Button>
       </div>
 
       {/* Enhanced Search Bar */}
@@ -742,12 +758,7 @@ const Index = () => {
         onDeleteHistory={handleDeleteHistory}
       />
 
-      <NoteInspector
-        isOpen={showNoteInspector}
-        onClose={() => setShowNoteInspector(false)}
-        note={selectedNote}
-        breadcrumbs={selectedNote ? getBreadcrumbs(selectedNote) : []}
-      />
+
 
       {/* Achievement System */}
       <AchievementSystem
