@@ -14,7 +14,7 @@ import {
   Users, 
   Clock, 
   Award,
-  Galaxy,
+  Globe,
   Sparkles,
   TrendingUp,
   Calendar,
@@ -182,7 +182,7 @@ const UserProfile: React.FC = () => {
           <Card className="bg-white/10 backdrop-blur-lg border-white/20 text-white">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-sm">
-                <Galaxy className="h-4 w-4" />
+                <Globe className="h-4 w-4" />
                 Galaxies Created
               </CardTitle>
             </CardHeader>
@@ -257,7 +257,7 @@ const UserProfile: React.FC = () => {
           <Card className="bg-white/10 backdrop-blur-lg border-white/20 text-white">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Galaxy className="h-6 w-6" />
+                <Globe className="h-6 w-6" />
                 My Knowledge Galaxies
               </CardTitle>
             </CardHeader>

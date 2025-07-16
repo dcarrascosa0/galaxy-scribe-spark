@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, forwardRef } from 'react';
+
+import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 
 interface Note {
   id: string;
@@ -31,7 +32,7 @@ interface KnowledgeGalaxyProps {
 }
 
 const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
-  ({ notes, onNodeClick, onNodeHover, selectedNodeId, focusMode, searchResults, onScaleChange, onOffsetChange, theme }, ref) => {
+  ({ notes, onNodeClick, onNodeHover, selectedNodeId, focusMode, searchResults, onScaleChange, onOffsetChange, theme }, forwardedRef) => {
   const [processedNodes, setProcessedNodes] = useState<ProcessedNode[]>([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [scale, setScale] = useState(1);
@@ -41,8 +42,11 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
   const [hoveredNode, setHoveredNode] = useState<ProcessedNode | null>(null);
   const [particles, setParticles] = useState<any[]>([]);
   
-  const canvasRef = ref || useRef<HTMLCanvasElement>(null);
+  const internalCanvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number>(0);
+
+  // Expose the internal ref to the parent
+  useImperativeHandle(forwardedRef, () => internalCanvasRef.current!, []);
 
   const colors = [
     '#69B34C', '#ACB334', '#FAB733', '#FF8E15', '#FF4E11',
@@ -54,7 +58,7 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
       case 'dark': return '#121212';
       case 'light': return '#f9f9f9';
       case 'cosmic': return '#0D0423';
-      case ' Serene': return '#E8F6EF';
+      case 'serene': return '#E8F6EF';
       default: return '#FFFFFF';
     }
   };
@@ -101,9 +105,9 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
   }, [dimensions]);
 
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!internalCanvasRef.current) return;
 
-    const canvas = canvasRef.current;
+    const canvas = internalCanvasRef.current;
     const handleResize = () => {
       setDimensions({
         width: canvas.offsetWidth,
@@ -131,7 +135,7 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
   }, [scale, offset, onScaleChange, onOffsetChange]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas = internalCanvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
@@ -182,7 +186,7 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
   };
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
+    const canvas = internalCanvasRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
@@ -201,7 +205,7 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
   };
 
   const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
+    const canvas = internalCanvasRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
@@ -316,7 +320,7 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(
     return (
       <div className="relative w-full h-full overflow-hidden">
         <canvas
-          ref={canvasRef}
+          ref={internalCanvasRef}
           width={dimensions.width}
           height={dimensions.height}
           className="absolute inset-0 cursor-pointer"
