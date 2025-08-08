@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Input } from '@/components/ui/input';
 
 interface Note {
   id: string;
@@ -34,28 +35,32 @@ const flattenNotes = (notes: Note[]): Note[] => {
 const GalaxySearch: React.FC<GalaxySearchProps> = ({ notes, onSearchResults, onClearSearch }) => {
   const [query, setQuery] = useState('');
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setQuery(value);
-    if (value.trim() === '') {
-      onClearSearch();
-      return;
-    }
-    const allNotes = flattenNotes(notes);
-    const results = allNotes.filter(note =>
-      note.title.toLowerCase().includes(value.toLowerCase())
-    );
-    onSearchResults(results);
-  };
+  const allNotes = useMemo(() => flattenNotes(notes), [notes]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      const value = query.trim();
+      if (value === '') {
+        onClearSearch();
+        return;
+      }
+      const results = allNotes.filter((note) =>
+        note.title.toLowerCase().includes(value.toLowerCase())
+      );
+      onSearchResults(results);
+    }, 300);
+
+    return () => clearTimeout(handler);
+  }, [query, allNotes, onSearchResults, onClearSearch]);
 
   return (
-    <input
+    <Input
       type="text"
-      className="input input-bordered w-80"
+      className="w-80"
       placeholder="Search notes by title..."
+      aria-label="Search notes by title"
       value={query}
-      onChange={handleChange}
-      style={{ padding: '0.5rem 1rem', borderRadius: 8, border: '1px solid #ccc' }}
+      onChange={(e) => setQuery(e.target.value)}
     />
   );
 };

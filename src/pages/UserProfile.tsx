@@ -133,7 +133,7 @@ const UserProfile: React.FC = () => {
         >
           <div className="relative">
             <Avatar className="w-32 h-32 mx-auto border-4 border-purple-400 shadow-2xl">
-              <AvatarImage src="/placeholder.svg" />
+              <AvatarImage src="/placeholder.svg" alt="User Avatar" loading="lazy" />
               <AvatarFallback className="bg-gradient-to-br from-purple-500 to-pink-500 text-white text-3xl font-bold">
                 KE
               </AvatarFallback>
@@ -276,6 +276,7 @@ const UserProfile: React.FC = () => {
                         <Card className="bg-white/5 backdrop-blur-sm border-white/10 hover:bg-white/10 transition-all duration-300 overflow-hidden">
                           <div className="relative">
                             <img 
+                              loading="lazy" 
                               src={galaxy.thumbnail} 
                               alt={galaxy.title}
                               className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
@@ -357,6 +358,7 @@ const UserProfile: React.FC = () => {
                           <Card className="bg-white/5 backdrop-blur-sm border-white/10 hover:bg-white/10 transition-all duration-300 overflow-hidden">
                             <div className="relative">
                               <img 
+                                loading="lazy" 
                                 src={galaxy.thumbnail} 
                                 alt={galaxy.title}
                                 className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"

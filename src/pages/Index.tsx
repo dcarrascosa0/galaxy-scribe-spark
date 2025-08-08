@@ -4,12 +4,12 @@ import GalaxyPlaceholder from '@/components/GalaxyPlaceholder';
 import LoadingProgress from '@/components/LoadingProgress';
 import SpeedDial from '@/components/SpeedDial';
 import GeneratePanel, { GenerateConfig } from '@/components/GeneratePanel';
-import HistoryPanel from '@/components/HisotryPanel';
+import HistoryPanel from '@/components/HistoryPanel';
 
 import GalaxySearch from '@/components/GalaxySearch';
 import FocusMode from '@/components/FocusMode';
 import GalaxyMiniMap from '@/components/GalaxyMiniMap';
-import KeyboardShortcuts from '@/components/KeyboardShorcut';
+import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import ThemeSelector from '@/components/ThemeSelector';
 import ExportGalaxy from '@/components/ExportGalaxy';
 import AchievementSystem from '@/components/AchievementSystem';

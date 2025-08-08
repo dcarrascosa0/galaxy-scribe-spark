@@ -130,8 +130,8 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
     const currentOffsetX = camera.offset.x + (camera.targetOffset.x - camera.offset.x) * easedProgress;
     const currentOffsetY = camera.offset.y + (camera.targetOffset.y - camera.offset.y) * easedProgress;
 
-    console.log('Animation progress:', progress, 'eased:', easedProgress);
-    console.log('Current scale:', currentScale, 'offset:', currentOffsetX, currentOffsetY);
+    
+    
 
     setCamera(prev => ({
       ...prev,
@@ -145,7 +145,7 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
 
     // Complete animation when progress reaches 1
     if (progress >= 1) {
-      console.log('Animation complete');
+      
       setCamera(prev => ({ ...prev, isAnimating: false }));
     }
   }, [camera.isAnimating, camera.animationStart, camera.animationDuration, camera.scale, camera.targetScale, camera.offset, camera.targetOffset, onScaleChange, onOffsetChange]);
@@ -165,12 +165,12 @@ const KnowledgeGalaxy = forwardRef<HTMLCanvasElement, KnowledgeGalaxyProps>(({
     const targetOffsetX = -node.x * targetScale + canvas.width / 2;
     const targetOffsetY = -node.y * targetScale + canvas.height / 2;
 
-    console.log('Focusing on node:', node.title, 'at', node.x, node.y);
-    console.log('Target scale:', targetScale, 'Target offset:', targetOffsetX, targetOffsetY);
+    
+    
 
     // Start smooth animation
     setCamera(prev => {
-      console.log('Starting animation, current isAnimating:', prev.isAnimating);
+      
       return {
         ...prev,
         targetScale,
